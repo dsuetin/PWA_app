@@ -3,16 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hello PWA</title>
+    <title>Hello PWA + ML</title>
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.5.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js"></script>
 </head>
 <body>
     <div class="container">
-        <h1>Hello World! 🎉</h1>
-        <p>Мое первое PWA-приложение</p>
-        <button onclick="showMessage()">Нажми меня!</button>
+        <h1>Hello PWA + ML! 🎉</h1>
+        <p>Выбери изображение для распознавания:</p>
+        <input type="file" id="imageInput" accept="image/*">
+        <img id="preview" style="max-width: 300px; display:block; margin:10px auto;">
+        <button id="recognizeBtn">Распознать</button>
         <button onclick="installPWA()">Установить приложение</button>
+        <div id="result"></div>
     </div>
 
     <script src="app.js"></script>
