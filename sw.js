@@ -1,14 +1,8 @@
-// -------------------------
-//  SERVICE WORKER
-//  Автообновление + оффлайн
-// -------------------------
+const CACHE_NAME = 'hello-pwa-v8.0';
+const SW_VERSION = '2025-12-01_v8';
+console.log('SW BUILD (SW context):', SW_VERSION);
 
-const CACHE_NAME = 'hello-pwa-v7.0'; // меняй при каждом обновлении
-console.log("SW BUILD: 2025-12-01_v7");
-
-// -------------------------
 // Основные файлы приложения
-// -------------------------
 const APP_SHELL = [
     '/',
     '/index.html',
@@ -19,9 +13,7 @@ const APP_SHELL = [
     '/icon-512.png'
 ];
 
-// -------------------------
-// Все файлы модели
-// -------------------------
+// Файлы модели
 const MODEL_FILES = [
     '/model/model.json',
     '/model/group1-shard1of1',
@@ -81,83 +73,63 @@ const MODEL_FILES = [
     '/model/group55-shard1of1'
 ];
 
-// -------------------------
-// Итоговый список кэшируемых файлов
-// -------------------------
 const urlsToCache = [...APP_SHELL, ...MODEL_FILES];
 
 // -------------------------
-// Установка SW
+// INSTALL
 // -------------------------
 self.addEventListener('install', event => {
-    console.log('[SW] Установка...');
-
+    self.skipWaiting();
     event.waitUntil(
         caches.open(CACHE_NAME)
             .then(cache => cache.addAll(urlsToCache))
-            .catch(err => console.error('[SW] Ошибка при кэшировании:', err))
+            .catch(err => {
+                console.error('[SW] Ошибка кэширования:', err);
+                // отправляем ошибку на страницу
+                self.clients.matchAll().then(clients => {
+                    clients.forEach(client => {
+                        client.postMessage({ type: 'CACHE_ERROR', error: err.message });
+                    });
+                });
+            })
     );
-
-    self.skipWaiting(); // активируем сразу
 });
 
 // -------------------------
-// Активация SW
+// ACTIVATE
 // -------------------------
 self.addEventListener('activate', event => {
-    console.log('[SW] Активация...');
-
     event.waitUntil(
         caches.keys().then(keys =>
             Promise.all(
-                keys.map(key => {
-                    if (key !== CACHE_NAME) {
-                        console.log('[SW] Удаляем старый кэш:', key);
-                        return caches.delete(key);
-                    }
-                })
+                keys.map(key => key !== CACHE_NAME ? caches.delete(key) : null)
             )
         )
     );
 
     self.clients.claim();
 
-    // Сообщаем вкладкам о новой версии
+    // Отправляем версию SW и уведомление о новой версии на страницу
     self.clients.matchAll().then(clients => {
         clients.forEach(client => {
+            client.postMessage({ type: 'SW_VERSION', version: SW_VERSION });
             client.postMessage({ type: 'NEW_VERSION' });
         });
     });
 });
 
 // -------------------------
-// Перехват fetch запросов
+// FETCH
 // -------------------------
 self.addEventListener('fetch', event => {
     if (event.request.method !== 'GET') return;
-
     event.respondWith(
-        caches.match(event.request).then(cacheResponse => {
-            if (cacheResponse) return cacheResponse;
-
-            return fetch(event.request)
-                .then(networkResponse => {
-                    if (!networkResponse || networkResponse.status !== 200) return networkResponse;
-
-                    const clone = networkResponse.clone();
-                    caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
-
-                    return networkResponse;
-                })
-                .catch(() => {
-                    if (event.request.destination === 'document') {
-                        return caches.match('/index.html');
-                    }
-                    return new Response('Offline', {
-                        status: 408,
-                        headers: { 'Content-Type': 'text/plain' }
-                    });
-                });
-        })
+        caches.match(event.request)
+            .then(cacheResponse => cacheResponse || fetch(event.request).then(resp => {
+                if (!resp || resp.status !== 200) return resp;
+                const clone = resp.clone();
+                caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+                return resp;
+            }).catch(() => event.request.destination === 'document' ? caches.match('/index.html') : new Response('Offline', { status: 408, headers: {'Content-Type':'text/plain'} })))
     );
 });
