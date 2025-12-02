@@ -1,4 +1,5 @@
 // import * as tf from '@tensorflow/tfjs';
+import IMAGENET_CLASSES from './imagenet_classes.js';
 
 // ------------------------------------
 // PWA УСТАНОВКА
@@ -57,7 +58,7 @@ input.addEventListener('change', (e) => {
 });
 
 // ------------------------------------
-// РАСПОЗНАВАНИЕ
+// РАСПОЗНАВАНИЕ С ИМЕНАМИ КЛАССОВ
 // ------------------------------------
 document.getElementById('recognizeBtn').addEventListener('click', async () => {
     if (!preview.src) return alert('Выберите изображение!');
@@ -83,10 +84,13 @@ document.getElementById('recognizeBtn').addEventListener('click', async () => {
         .sort((a, b) => b.probability - a.probability)
         .slice(0, 5);
 
-    // Вывод
+    // Вывод с использованием имен из IMAGENET_CLASSES
     const resultDiv = document.getElementById('result');
     resultDiv.innerHTML = top5
-        .map(p => `Class ${p.classIndex}: ${(p.probability * 100).toFixed(2)}%`)
+        .map(p => {
+            const className = IMAGENET_CLASSES[p.classIndex] || `Class ${p.classIndex}`;
+            return `${className}(${p.classIndex}): ${(p.probability * 100).toFixed(2)}%`;
+        })
         .join('<br>');
 });
 
@@ -94,7 +98,7 @@ document.getElementById('recognizeBtn').addEventListener('click', async () => {
 // ПРОВЕРКА КЭША МОДЕЛИ
 // ------------------------------------
 async function checkModelCache() {
-    const cacheName = 'hello-pwa-v11.0';
+    const cacheName = 'hello-pwa-v13.0';
 
     if (!('caches' in window)) return;
 

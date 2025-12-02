@@ -6,6 +6,8 @@
     <title>Hello PWA + ML</title>
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
+
+    <!-- TensorFlow.js и MobileNet -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.5.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js"></script>
 </head>
@@ -20,14 +22,48 @@
         <div id="result"></div>
     </div>
 
+    <!-- Подключаем imagenet_classes.js -->
+    <script type="module">
+        import imagenetClasses from './imagenet_classes.js';
+
+        // Пример использования: вывести первые 10 классов в консоль
+        console.log("Первые 10 классов ImageNet:", imagenetClasses.slice(0, 10));
+
+        // Можно передавать массив классов в app.js, если нужно
+        window.IMAGENET_CLASSES = imagenetClasses;
+    </script>
+
+    <!-- Главный скрипт приложения -->
     <script type="module" src="app.js"></script>
 
+    <!-- Регистрация Service Worker -->
     <script>
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js')
                 .then(() => console.log('SW registered'))
                 .catch(err => console.log('SW error:', err));
         }
+
+        // Функция установки PWA
+        function installPWA() {
+            if (window.deferredPrompt) {
+                window.deferredPrompt.prompt();
+                window.deferredPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        console.log('PWA установлен');
+                    } else {
+                        console.log('PWA установка отменена');
+                    }
+                    window.deferredPrompt = null;
+                });
+            }
+        }
+
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            window.deferredPrompt = e;
+            console.log('PWA готов к установке');
+        });
     </script>
 </body>
 </html>
