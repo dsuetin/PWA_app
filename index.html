@@ -3,67 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hello PWA + ML</title>
+    <title>Hello PWA + ML + Lines</title>
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
 
-    <!-- TensorFlow.js и MobileNet -->
+    <!-- TensorFlow.js -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.5.0/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js"></script>
+
+    <!-- OpenCV.js -->
+    <script async src="https://docs.opencv.org/4.x/opencv.js" type="text/javascript"></script>
 </head>
 <body>
     <div class="container">
-        <h1>Hello PWA + ML! 🎉</h1>
-        <p>Выбери изображение для распознавания:</p>
+        <h1>Hello PWA + ML + Lines! 🎉</h1>
+        <p>Выбери изображение для распознавания и линии:</p>
         <input type="file" id="imageInput" accept="image/*">
-        <img id="preview" style="max-width: 300px; display:block; margin:10px auto;">
+        <canvas id="canvas" style="max-width: 300px; display:block; margin:10px auto;"></canvas>
         <button id="recognizeBtn">Распознать</button>
-        <button onclick="installPWA()">Установить приложение</button>
+        <button id="installBtn">Установить приложение</button>
         <div id="result"></div>
     </div>
 
-    <!-- Подключаем imagenet_classes.js -->
-    <script type="module">
-        import imagenetClasses from './imagenet_classes.js';
-
-        // Пример использования: вывести первые 10 классов в консоль
-        console.log("Первые 10 классов ImageNet:", imagenetClasses.slice(0, 10));
-
-        // Можно передавать массив классов в app.js, если нужно
-        window.IMAGENET_CLASSES = imagenetClasses;
-    </script>
-
-    <!-- Главный скрипт приложения -->
+    <!-- Ваш скрипт с MobileNet и детекцией линий -->
     <script type="module" src="app.js"></script>
 
-    <!-- Регистрация Service Worker -->
     <script>
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js')
                 .then(() => console.log('SW registered'))
                 .catch(err => console.log('SW error:', err));
         }
-
-        // Функция установки PWA
-        function installPWA() {
-            if (window.deferredPrompt) {
-                window.deferredPrompt.prompt();
-                window.deferredPrompt.userChoice.then((choiceResult) => {
-                    if (choiceResult.outcome === 'accepted') {
-                        console.log('PWA установлен');
-                    } else {
-                        console.log('PWA установка отменена');
-                    }
-                    window.deferredPrompt = null;
-                });
-            }
-        }
-
-        window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            window.deferredPrompt = e;
-            console.log('PWA готов к установке');
-        });
     </script>
 </body>
 </html>
