@@ -124,7 +124,7 @@ document.getElementById('recognizeBtn').addEventListener('click', async () => {
 // ПРОВЕРКА КЭША МОДЕЛИ
 // ------------------------------------
 async function checkModelCache() {
-    const cacheName = 'hello-pwa-v15.0';
+    const cacheName = 'hello-pwa-v16.0';
     if (!('caches' in window)) return;
     const cache = await caches.open(cacheName);
     const keys = await cache.keys();
