@@ -14,22 +14,32 @@
     <!-- OpenCV.js -->
     <!-- <script async src="https://docs.opencv.org/4.x/opencv.js" type="text/javascript"></script> -->
     <script src="./libs/opencv.js"></script>
-
 </head>
 <body>
     <div class="container">
         <h1>Hello PWA + ML + Lines! 🎉</h1>
-        <p>Выбери изображение для распознавания и линии:</p>
+
+        <p>Выбери изображение для распознавания и поиска линий:</p>
+
         <input type="file" id="imageInput" accept="image/*">
+
+        <!-- Canvas оригинального изображения -->
         <canvas id="canvas" style="max-width: 300px; display:block; margin:10px auto;"></canvas>
+
+        <!-- Canvas результата обработки OpenCV -->
+        <canvas id="processedCanvas" style="max-width:300px; display:block; margin:10px auto;"></canvas>
+
         <button id="recognizeBtn">Распознать</button>
+        <button onclick="detectRedLine()">Найти красную линию</button>
         <button id="installBtn">Установить приложение</button>
+
         <div id="result"></div>
     </div>
 
-    <!-- Ваш скрипт с MobileNet и детекцией линий -->
+    <!-- Модульный скрипт приложения -->
     <script type="module" src="app.js"></script>
 
+    <!-- SW -->
     <script>
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js')
