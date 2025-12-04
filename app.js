@@ -125,7 +125,7 @@ document.getElementById('recognizeBtn').addEventListener('click', async () => {
 // ПРОВЕРКА КЭША МОДЕЛИ
 // ------------------------------------
 async function checkModelCache() {
-    const cacheName = 'hello-pwa-v22.0';
+    const cacheName = 'hello-pwa-v30.0';
     if (!('caches' in window)) return;
     const cache = await caches.open(cacheName);
     const keys = await cache.keys();
@@ -171,95 +171,168 @@ if ('serviceWorker' in navigator) {
     });
 }
 
-// -------------------------
-//  OPENCV: RED LINE DETECTION (IMPROVED)
-// -------------------------
-async function detectRedLine() {
+async function detectColoredLines() {
+    const resultDiv = document.getElementById("result");
 
-    if (canvas.width === 0 || canvas.height === 0) {
+    if (canvas.width === 0) {
         alert("Сначала загрузите изображение");
         return;
     }
-
     if (typeof cv === "undefined") {
-        alert("OpenCV ещё не загрузился!");
+        alert("OpenCV не загружен");
         return;
     }
 
     const src = cv.imread(canvas);
-    const hsv = new cv.Mat();
 
+    // --- HSV ---
+    const hsv = new cv.Mat();
     cv.cvtColor(src, hsv, cv.COLOR_BGR2HSV);
 
-    // Красный диапазон
-    let low1 = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [0, 120, 50, 0]);
-    let high1 = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [10, 255, 255, 255]);
-    let mask1 = new cv.Mat();
-    cv.inRange(hsv, low1, high1, mask1);
-
-    let low2 = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [170, 120, 50, 0]);
-    let high2 = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [180, 255, 255, 255]);
-    let mask2 = new cv.Mat();
-    cv.inRange(hsv, low2, high2, mask2);
-
+    // Маска насыщенных пикселей (цветных)
+    let low = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [0, 60, 40, 0]);
+    let high = new cv.Mat(hsv.rows, hsv.cols, hsv.type(), [180, 255, 255, 255]);
     const mask = new cv.Mat();
-    cv.add(mask1, mask2, mask);
+    cv.inRange(hsv, low, high, mask);
+    low.delete(); high.delete();
 
-    const kernel = cv.Mat.ones(3, 3, cv.CV_8U);
-    cv.morphologyEx(mask, mask, cv.MORPH_OPEN, kernel);
+    // Морфология — соединяем разрывы
+    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(9, 9));
     cv.morphologyEx(mask, mask, cv.MORPH_CLOSE, kernel);
+    cv.morphologyEx(mask, mask, cv.MORPH_OPEN, kernel);
 
+    // Находим контуры
     const contours = new cv.MatVector();
     const hierarchy = new cv.Mat();
-    cv.findContours(mask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    cv.findContours(mask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE);
 
     if (contours.size() === 0) {
-        resultDiv.innerHTML = "<b>Красная линия не найдена.</b>";
+        resultDiv.innerHTML = "<b>Цветные линии не найдены</b>";
+        src.delete(); hsv.delete(); mask.delete(); kernel.delete();
+        contours.delete(); hierarchy.delete();
         return;
     }
 
-    let output = "<b>Найдены красные линии:</b><br><br>";
+    let out = "<b>Найденные линии:</b><br><br>";
 
-    let dst = src.clone();
-
+    // --- Обрабатываем каждый цветной сегмент ---
     for (let i = 0; i < contours.size(); i++) {
-        let contour = contours.get(i);
-        let rect = cv.minAreaRect(contour);
-        let size = rect.size;
 
-        let thickness = Math.min(size.width, size.height);
+        let cnt = contours.get(i);
 
-        let linePoints = new cv.Mat();
-        cv.fitLine(contour, linePoints, cv.DIST_L2, 0, 0.01, 0.01);
+        // Подгоняем прямую под контур
+        let lineData = new cv.Mat();
+        cv.fitLine(cnt, lineData, cv.DIST_L2, 0, 0.01, 0.01);
 
-        let vx = linePoints.floatAt(0, 0);
-        let vy = linePoints.floatAt(1, 0);
-        let x0 = linePoints.floatAt(2, 0);
-        let y0 = linePoints.floatAt(3, 0);
+        let vx = lineData.floatAt(0, 0);
+        let vy = lineData.floatAt(1, 0);
+        let x0 = lineData.floatAt(2, 0);
+        let y0 = lineData.floatAt(3, 0);
 
-        let x1 = x0 - vx * 1000;
-        let y1 = y0 - vy * 1000;
-        let x2 = x0 + vx * 1000;
-        let y2 = y0 + vy * 1000;
+        // Собираем все точки контура
+        let pts = [];
+        for (let j = 0; j < cnt.rows; j++) {
+            let p = cnt.intPtr(j);
+            pts.push({ x: p[0], y: p[1] });
+        }
 
-        cv.line(dst, new cv.Point(x1, y1), new cv.Point(x2, y2), new cv.Scalar(0, 255, 0, 255), 2);
+        // --- Находим минимальную и максимальную проекции (dot product) ---
+        let tMin = Infinity;
+        let tMax = -Infinity;
 
-        let length = cv.arcLength(contour, false);
+        for (let p of pts) {
+            let t = (p.x - x0) * vx + (p.y - y0) * vy;
+            if (t < tMin) tMin = t;
+            if (t > tMax) tMax = t;
+        }
 
-        output += `Линия ${i + 1}:<br>`;
-        output += `Толщина: <b>${thickness.toFixed(1)} px</b><br>`;
-        output += `Длина: <b>${length.toFixed(1)} px</b><br><br>`;
+        // Получаем реальные координаты ограниченного отрезка
+        let x1 = x0 + vx * tMin;
+        let y1 = y0 + vy * tMin;
+        let x2 = x0 + vx * tMax;
+        let y2 = y0 + vy * tMax;
+
+        // Рисуем на исходном canvas
+        cv.line(src,
+                new cv.Point(x1, y1),
+                new cv.Point(x2, y2),
+                [0, 255, 0, 255],
+                12);
+
+        let length = Math.hypot(x2 - x1, y2 - y1);
+
+        out += `Линия ${i + 1}:<br>
+                (${x1.toFixed(0)}, ${y1.toFixed(0)}) →
+                (${x2.toFixed(0)}, ${y2.toFixed(0)})<br>
+                Длина: ${length.toFixed(1)} px<br><br>`;
+
+        lineData.delete();
     }
 
-    cv.imshow("processedCanvas", dst);
-    resultDiv.innerHTML = output;
+    // Показываем результат на исходном canvas
+    cv.imshow(canvas, src);
 
-    src.delete(); hsv.delete();
-    low1.delete(); high1.delete();
-    low2.delete(); high2.delete();
-    mask.delete(); mask1.delete(); mask2.delete();
-    kernel.delete();
+    resultDiv.innerHTML = out;
+
+    // Чистим память
+    src.delete(); hsv.delete(); mask.delete(); kernel.delete();
     contours.delete(); hierarchy.delete();
 }
 
-window.detectRedLine = detectRedLine;
+
+window.detectColoredLines = detectColoredLines;
+
+
+// ------------------------------------
+// ФУНКЦИЯ: НАЙТИ ЧЕРНЫЕ КРУГИ
+// ------------------------------------
+async function findBlackCircles() {
+    if (canvas.width === 0) {
+        alert("Сначала загрузите изображение");
+        return [];
+    }
+    if (typeof cv === "undefined") {
+        alert("OpenCV не загружен");
+        return [];
+    }
+
+    const src = cv.imread(canvas);
+    const gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+    // Черные объекты: инвертируем порог
+    const thresh = new cv.Mat();
+    cv.threshold(gray, thresh, 50, 255, cv.THRESH_BINARY_INV);
+
+    // Морфология для шумов
+    const kernel = cv.Mat.ones(3, 3, cv.CV_8U);
+    cv.morphologyEx(thresh, thresh, cv.MORPH_OPEN, kernel);
+
+    const contours = new cv.MatVector();
+    const hierarchy = new cv.Mat();
+    cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+    const circles = [];
+
+    for (let i = 0; i < contours.size(); i++) {
+        const cnt = contours.get(i);
+        const circle = cv.minEnclosingCircle(cnt);
+        if (circle.radius > 2) {
+            circles.push({ x: circle.center.x, y: circle.center.y, radius: circle.radius });
+            cv.circle(src, new cv.Point(circle.center.x, circle.center.y), circle.radius, [0, 0, 255, 255], 2);
+        }
+        cnt.delete();
+    }
+
+    cv.imshow(canvas, src);
+
+    resultDiv.innerHTML += `<hr><b>Черные круги:</b><br>` +
+        circles.map((c, i) => `Круг ${i+1}: (${c.x.toFixed(1)}, ${c.y.toFixed(1)}), радиус=${c.radius.toFixed(1)} px`).join('<br>');
+
+    src.delete(); gray.delete(); thresh.delete(); kernel.delete(); contours.delete(); hierarchy.delete();
+
+    return circles;
+}
+
+// Экспортируем для использования в HTML
+window.findBlackCircles = findBlackCircles;
