@@ -20,7 +20,6 @@
         <h1>Hello PWA + ML + Lines! 🎉</h1>
 
         <p>Выбери изображение для распознавания и поиска линий:</p>
-
         <input type="file" id="imageInput" accept="image/*">
 
         <!-- Canvas оригинального изображения -->
@@ -29,9 +28,9 @@
         <!-- Canvas результата обработки OpenCV -->
         <canvas id="processedCanvas" style="max-width:300px; display:block; margin:10px auto;"></canvas>
 
-        <button id="recognizeBtn">Распознать</button> -->
-        <button onclick="detectColoredLines()">Найти цветные линии</button>
-        <button onclick="findBlackCircles()">Найти черные круги</button>
+        <button id="recognizeBtn">Распознать</button>
+        <button id="detectLinesBtn">Найти цветные линии</button>
+        <button id="findCirclesBtn">Найти черные круги</button>
         <button id="installBtn">Установить приложение</button>
 
         <div id="result"></div>
