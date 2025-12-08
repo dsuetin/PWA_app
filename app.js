@@ -105,9 +105,14 @@ document.getElementById('recognizeBtn').addEventListener('click', async () => {
 // ОБРАБОТКА КНОПОК: ЛИНИИ И КРУГИ
 // ------------------------------------
 document.getElementById('detectLinesBtn').addEventListener('click', async () => {
-    const colorRange = { hMin: 0, hMax: 180, sMin: 60, sMax: 255, vMin: 40, vMax: 255 };
-    const lines = await detectColoredLines(colorRange);
-    console.log("Найденные линии:", lines);
+    // const colorRange = { hMin: 0, hMax: 180, sMin: 60, sMax: 255, vMin: 40, vMax: 255 };
+    const yellowColorRange =  { hMin: 60, hMax: 110, sMin: 40, sMax: 255, vMin: 40, vMax: 255 };
+    
+    const yellowLines = await detectColoredLines(yellowColorRange);
+    console.log("Найденные жёлтые линии:", yellowLines);
+    const redColorRange =  { hMin: 110, hMax: 180, sMin: 60, sMax: 255, vMin: 40, vMax: 255 };
+    const redLines = await detectColoredLines(redColorRange);
+    console.log("Найденные красные линии:", redLines);
 });
 
 document.getElementById('findCirclesBtn').addEventListener('click', async () => {
@@ -119,7 +124,7 @@ document.getElementById('findCirclesBtn').addEventListener('click', async () => 
 // ПРОВЕРКА КЭША МОДЕЛИ
 // ------------------------------------
 async function checkModelCache() {
-    const cacheName = 'hello-pwa-v44.0';
+    const cacheName = 'hello-pwa-v52.0';
     if (!('caches' in window)) return;
 
     const cache = await caches.open(cacheName);
