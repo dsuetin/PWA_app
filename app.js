@@ -124,7 +124,7 @@ document.getElementById('findCirclesBtn').addEventListener('click', async () => 
 // ПРОВЕРКА КЭША МОДЕЛИ
 // ------------------------------------
 async function checkModelCache() {
-    const cacheName = 'hello-pwa-v52.0';
+    const cacheName = 'hello-pwa-v53.0';
     if (!('caches' in window)) return;
 
     const cache = await caches.open(cacheName);
