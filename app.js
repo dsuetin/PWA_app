@@ -30,23 +30,26 @@ import { FloorPlanEditor } from "./floorplan.js";
 
 let floorEditor = null;
 
+window.addEventListener("load", () => {
+    floorEditor = new FloorPlanEditor("canvas");
+});
+
+// Включение режима рисования
 document.getElementById("floorBtn")?.addEventListener("click", () => {
     floorEditor = new FloorPlanEditor("canvas");
-    const resultDiv = document.getElementById("result");
-    resultDiv.innerHTML = "<b>Режим: Рисование плана помещений</b>";
+    document.getElementById("result").innerHTML = "<b>Режим: Рисование плана помещений</b>";
 });
 
-// Автоматически создать редактор при загрузке страницы (опционально)
-window.addEventListener("load", () => {
-    console.log("PWA загружено!");
-    // floorEditor = new FloorPlanEditor("canvas");
+// Добавим возможность задавать длину линии
+document.getElementById("lineLength")?.addEventListener("change", (e) => {
+    const len = parseInt(e.target.value);
+    if (floorEditor) floorEditor.setLineLength(len);
 });
-
 // ------------------------------------
 // ПРОВЕРКА КЭША PWA
 // ------------------------------------
 async function checkModelCache() {
-    const cacheName = "hello-pwa-v55.0";
+    const cacheName = "hello-pwa-v56.0";
     if (!("caches" in window)) return;
 
     const cache = await caches.open(cacheName);
