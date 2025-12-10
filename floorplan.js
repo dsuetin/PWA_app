@@ -7,20 +7,13 @@ export class FloorPlanEditor {
         this.lines = [];
         this.currentLine = null;
         this.isDrawing = false;
-        this.lineLength = null; // фиксированная длина линии
-
-        // Последняя точка для цепочки линий
-        this.lastPoint = null;
+        this.lastPoint = { x: 0, y: 0 }; // начало первой линии в (0,0)
 
         this.canvas.addEventListener("mousedown", (e) => this.startLine(e));
         this.canvas.addEventListener("mousemove", (e) => this.drawPreview(e));
         this.canvas.addEventListener("mouseup", (e) => this.finishLine(e));
 
         this.draw();
-    }
-
-    setLineLength(len) {
-        this.lineLength = len;
     }
 
     snapToGrid(x, y) {
@@ -31,14 +24,8 @@ export class FloorPlanEditor {
     }
 
     startLine(event) {
-        const rect = this.canvas.getBoundingClientRect();
-        let pos = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-
-        // если есть lastPoint, начинаем с него
-        if (this.lastPoint) pos = { x: this.lastPoint.x, y: this.lastPoint.y };
-        else pos = this.snapToGrid(pos.x, pos.y);
-
-        this.currentLine = { x1: pos.x, y1: pos.y, x2: pos.x, y2: pos.y };
+        // Начало линии всегда с конца предыдущей
+        this.currentLine = { x1: this.lastPoint.x, y1: this.lastPoint.y, x2: null, y2: null };
         this.isDrawing = true;
     }
 
@@ -47,21 +34,13 @@ export class FloorPlanEditor {
 
         const rect = this.canvas.getBoundingClientRect();
         let pos = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-
-        // Сетка или от конца предыдущей линии
         pos = this.snapToGrid(pos.x, pos.y);
 
-        // Горизонтальная или вертикальная
+        // Горизонтальная или вертикальная линия
         const dx = Math.abs(pos.x - this.currentLine.x1);
         const dy = Math.abs(pos.y - this.currentLine.y1);
         if (dx > dy) pos.y = this.currentLine.y1;
         else pos.x = this.currentLine.x1;
-
-        // Ограничение длины линии
-        if (this.lineLength) {
-            if (dx > dy) pos.x = this.currentLine.x1 + Math.sign(pos.x - this.currentLine.x1) * this.lineLength;
-            else pos.y = this.currentLine.y1 + Math.sign(pos.y - this.currentLine.y1) * this.lineLength;
-        }
 
         this.currentLine.x2 = pos.x;
         this.currentLine.y2 = pos.y;
@@ -73,7 +52,23 @@ export class FloorPlanEditor {
         if (!this.isDrawing) return;
         this.isDrawing = false;
 
+        // Спрашиваем длину линии в момент фиксации второй точки
+        const len = prompt("Введите длину линии в пикселях (оставьте пустым для свободной длины):");
+        if (len && !isNaN(len)) {
+            const length = parseInt(len);
+
+            const dx = this.currentLine.x2 - this.currentLine.x1;
+            const dy = this.currentLine.y2 - this.currentLine.y1;
+            const angle = Math.atan2(dy, dx);
+
+            // Корректируем координаты x2, y2 по длине
+            this.currentLine.x2 = this.currentLine.x1 + Math.round(length * Math.cos(angle));
+            this.currentLine.y2 = this.currentLine.y1 + Math.round(length * Math.sin(angle));
+        }
+
+        // Сохраняем линию
         this.lines.push({ ...this.currentLine });
+        // Обновляем конец последней линии
         this.lastPoint = { x: this.currentLine.x2, y: this.currentLine.y2 };
         this.currentLine = null;
 
@@ -112,7 +107,7 @@ export class FloorPlanEditor {
             ctx.stroke();
         }
 
-        if (this.currentLine) {
+        if (this.currentLine && this.currentLine.x2 !== null) {
             ctx.strokeStyle = "#ff0080";
             ctx.beginPath();
             ctx.moveTo(this.currentLine.x1, this.currentLine.y1);
@@ -122,7 +117,7 @@ export class FloorPlanEditor {
     }
 
     draw() {
-        this.ctx.fillStyle = "#f8f8f8"; // фон
+        this.ctx.fillStyle = "#f8f8f8";
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         this.drawGrid();
         this.drawLines();

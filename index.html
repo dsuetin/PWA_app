@@ -1,48 +1,29 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PWA Floor Plan Editor</title>
-
-    <link rel="manifest" href="manifest.json" />
-    <link rel="stylesheet" href="style.css" />
-
-    <!-- OpenCV.js (если понадобится в будущем) -->
-    <script src="./libs/opencv.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PWA 2D План помещений</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
 </head>
 <body>
+    <div class="container">
+        <h1>Редактор планов помещений 2D</h1>
 
-<div class="container">
-    <h1>Редактор плана помещений 🏠</h1>
+        <div>
+            <button id="floorBtn">Включить режим рисования</button>
+        </div>
+        <div>
+            <label>Длина линии (в пикселях): </label>
+            <input type="number" id="lineLength" min="1" value="100">
+        </div>
 
-    <div style="margin-bottom: 10px;">
-        <button id="floorBtn">Режим рисования линий</button>
-        <button id="lengthBtn">Задать длину линии</button>
+        <canvas id="canvas" width="800" height="600" style="border:1px solid #ccc; background:#f8f8f8;"></canvas>
 
-        <input id="lineLengthInput" type="number" min="10" value="100"
-               style="width:80px; display:none;"> px
+        <div id="result"></div>
     </div>
 
-    <canvas id="canvas" width="800" height="600"
-            style="border:1px solid #555; background:#111; display:block; margin:10px auto;">
-    </canvas>
-
-    <div id="result"></div>
-
-    <button id="installBtn">Установить приложение</button>
-</div>
-
-<script type="module" src="app.js"></script>
-
-<!-- SERVICE WORKER -->
-<script>
-if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js")
-        .then(() => console.log("SW registered"))
-        .catch(err => console.error("SW error:", err));
-}
-</script>
-
+    <script type="module" src="app.js"></script>
 </body>
 </html>

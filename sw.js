@@ -1,5 +1,5 @@
-const CACHE_NAME = 'hello-pwa-v56.0';
-const SW_VERSION = '2025-12-02_v56';
+const CACHE_NAME = 'hello-pwa-v58.0';
+const SW_VERSION = '2025-12-02_v58';
 console.log('SW BUILD (SW context):', SW_VERSION);
 
 // Основные файлы приложения
