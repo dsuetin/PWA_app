@@ -7,7 +7,7 @@ export class FloorPlanEditor {
         this.lines = [];
         this.currentLine = null;
         this.isDrawing = false;
-        this.lastPoint = { x: 0, y: 0 }; // начало первой линии в (0,0)
+        this.lastPoint = null; // конец предыдущей линии
 
         this.canvas.addEventListener("mousedown", (e) => this.startLine(e));
         this.canvas.addEventListener("mousemove", (e) => this.drawPreview(e));
@@ -24,8 +24,14 @@ export class FloorPlanEditor {
     }
 
     startLine(event) {
-        // Начало линии всегда с конца предыдущей
-        this.currentLine = { x1: this.lastPoint.x, y1: this.lastPoint.y, x2: null, y2: null };
+        const rect = this.canvas.getBoundingClientRect();
+        let pos = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+        pos = this.snapToGrid(pos.x, pos.y);
+
+        // начало линии с конца предыдущей, если есть
+        const start = this.lastPoint ? { ...this.lastPoint } : pos;
+
+        this.currentLine = { x1: start.x, y1: start.y, x2: start.x, y2: start.y };
         this.isDrawing = true;
     }
 
@@ -39,8 +45,14 @@ export class FloorPlanEditor {
         // Горизонтальная или вертикальная линия
         const dx = Math.abs(pos.x - this.currentLine.x1);
         const dy = Math.abs(pos.y - this.currentLine.y1);
-        if (dx > dy) pos.y = this.currentLine.y1;
-        else pos.x = this.currentLine.x1;
+
+        if (dx > dy) {
+            // строго горизонтальная
+            pos.y = this.currentLine.y1;
+        } else {
+            // строго вертикальная
+            pos.x = this.currentLine.x1;
+        }
 
         this.currentLine.x2 = pos.x;
         this.currentLine.y2 = pos.y;
@@ -52,23 +64,27 @@ export class FloorPlanEditor {
         if (!this.isDrawing) return;
         this.isDrawing = false;
 
-        // Спрашиваем длину линии в момент фиксации второй точки
-        const len = prompt("Введите длину линии в пикселях (оставьте пустым для свободной длины):");
-        if (len && !isNaN(len)) {
-            const length = parseInt(len);
+        // Длина линии через prompt
+        const lenStr = prompt("Введите длину линии в пикселях (оставьте пустым для свободной длины):");
+        if (lenStr && !isNaN(lenStr)) {
+            const length = parseInt(lenStr);
 
             const dx = this.currentLine.x2 - this.currentLine.x1;
             const dy = this.currentLine.y2 - this.currentLine.y1;
-            const angle = Math.atan2(dy, dx);
 
-            // Корректируем координаты x2, y2 по длине
-            this.currentLine.x2 = this.currentLine.x1 + Math.round(length * Math.cos(angle));
-            this.currentLine.y2 = this.currentLine.y1 + Math.round(length * Math.sin(angle));
+            if (Math.abs(dx) > Math.abs(dy)) {
+                // горизонтальная
+                this.currentLine.x2 = this.currentLine.x1 + Math.sign(dx) * length;
+                this.currentLine.y2 = this.currentLine.y1;
+            } else {
+                // вертикальная
+                this.currentLine.x2 = this.currentLine.x1;
+                this.currentLine.y2 = this.currentLine.y1 + Math.sign(dy) * length;
+            }
         }
 
         // Сохраняем линию
         this.lines.push({ ...this.currentLine });
-        // Обновляем конец последней линии
         this.lastPoint = { x: this.currentLine.x2, y: this.currentLine.y2 };
         this.currentLine = null;
 

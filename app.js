@@ -49,7 +49,7 @@ document.getElementById("lineLength")?.addEventListener("change", (e) => {
 // ПРОВЕРКА КЭША PWA
 // ------------------------------------
 async function checkModelCache() {
-    const cacheName = "hello-pwa-v58.0";
+    const cacheName = "hello-pwa-v59.0";
     if (!("caches" in window)) return;
 
     const cache = await caches.open(cacheName);
