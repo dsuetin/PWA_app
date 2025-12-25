@@ -37,19 +37,30 @@ window.addEventListener("load", () => {
 // Включение режима рисования
 document.getElementById("floorBtn")?.addEventListener("click", () => {
     floorEditor = new FloorPlanEditor("canvas");
-    document.getElementById("result").innerHTML = "<b>Режим: Рисование плана помещений</b>";
+    document.getElementById("result").innerHTML =
+        "<b>Режим: Рисование плана помещений</b>";
 });
 
-// Добавим возможность задавать длину линии
+// Задание длины линии
 document.getElementById("lineLength")?.addEventListener("change", (e) => {
     const len = parseInt(e.target.value);
     if (floorEditor) floorEditor.setLineLength(len);
 });
+
+// ------------------------------------
+// 🔙 ОТМЕНА ПОСЛЕДНЕЙ ЛИНИИ (UNDO)
+// ------------------------------------
+document.getElementById("undoBtn")?.addEventListener("click", () => {
+    if (floorEditor && typeof floorEditor.undo === "function") {
+        floorEditor.undo();
+    }
+});
+
 // ------------------------------------
 // ПРОВЕРКА КЭША PWA
 // ------------------------------------
 async function checkModelCache() {
-    const cacheName = "hello-pwa-v59.0";
+    const cacheName = "hello-pwa-v61.0";
     if (!("caches" in window)) return;
 
     const cache = await caches.open(cacheName);
