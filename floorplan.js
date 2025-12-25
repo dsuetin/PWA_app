@@ -26,6 +26,7 @@ export class FloorPlanEditor {
         this.draw();
     }
 
+    // -------------------------
     snapToGrid(x, y) {
         return {
             x: Math.round(x / this.gridSize) * this.gridSize,
@@ -33,12 +34,12 @@ export class FloorPlanEditor {
         };
     }
 
+    // -------------------------
     startLine(event) {
         const rect = this.canvas.getBoundingClientRect();
         let pos = { x: event.clientX - rect.left, y: event.clientY - rect.top };
         pos = this.snapToGrid(pos.x, pos.y);
 
-        // начало линии с конца предыдущей, если есть
         const start = this.lastPoint ? { ...this.lastPoint } : pos;
 
         this.currentLine = { x1: start.x, y1: start.y, x2: start.x, y2: start.y };
@@ -55,11 +56,8 @@ export class FloorPlanEditor {
         const dx = Math.abs(pos.x - this.currentLine.x1);
         const dy = Math.abs(pos.y - this.currentLine.y1);
 
-        if (dx > dy) {
-            pos.y = this.currentLine.y1;
-        } else {
-            pos.x = this.currentLine.x1;
-        }
+        if (dx > dy) pos.y = this.currentLine.y1;
+        else pos.x = this.currentLine.x1;
 
         this.currentLine.x2 = pos.x;
         this.currentLine.y2 = pos.y;
@@ -93,6 +91,7 @@ export class FloorPlanEditor {
         this.draw();
     }
 
+    // -------------------------
     drawGrid() {
         const ctx = this.ctx;
         ctx.strokeStyle = "#ccc";
@@ -142,8 +141,6 @@ export class FloorPlanEditor {
     }
 
     // -------------------------
-    // Undo только последней линии
-    // -------------------------
     undo() {
         if (this.lines.length === 0) {
             this.lastPoint = null;
@@ -160,6 +157,13 @@ export class FloorPlanEditor {
             this.lastPoint = null;
         }
 
+        this.draw();
+    }
+
+    // -------------------------
+    setGridSize(size) {
+        if (typeof size !== "number" || size <= 0) return;
+        this.gridSize = size;
         this.draw();
     }
 }

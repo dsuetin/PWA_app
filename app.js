@@ -34,6 +34,15 @@ window.addEventListener("load", () => {
     floorEditor = new FloorPlanEditor("canvas");
 });
 
+// после создания floorEditor
+const gridInput = document.getElementById("gridSizeInput");
+gridInput?.addEventListener("change", (e) => {
+    const size = parseInt(e.target.value);
+    if (!isNaN(size) && floorEditor) {
+        floorEditor.setGridSize(size);
+    }
+});
+
 // Включение режима рисования
 document.getElementById("floorBtn")?.addEventListener("click", () => {
     floorEditor = new FloorPlanEditor("canvas");
@@ -60,7 +69,7 @@ document.getElementById("undoBtn")?.addEventListener("click", () => {
 // ПРОВЕРКА КЭША PWA
 // ------------------------------------
 async function checkModelCache() {
-    const cacheName = "hello-pwa-v2.0";
+    const cacheName = "hello-pwa-v3.0";
     if (!("caches" in window)) return;
 
     const cache = await caches.open(cacheName);
