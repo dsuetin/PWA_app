@@ -9,16 +9,22 @@ export class FloorPlanEditor {
         this.isDrawing = false;
         this.lastPoint = null; // конец предыдущей линии
 
+        // события мыши
         this.canvas.addEventListener("mousedown", (e) => this.startLine(e));
         this.canvas.addEventListener("mousemove", (e) => this.drawPreview(e));
         this.canvas.addEventListener("mouseup", (e) => this.finishLine(e));
 
+        // Ctrl+Z для Undo
+        window.addEventListener("keydown", (e) => {
+            const isUndo = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z";
+            if (isUndo) {
+                e.preventDefault();
+                this.undo();
+            }
+        });
+
         this.draw();
     }
-
-    // -------------------------
-    // ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
-    // -------------------------
 
     snapToGrid(x, y) {
         return {
@@ -27,28 +33,15 @@ export class FloorPlanEditor {
         };
     }
 
-    // -------------------------
-    // РИСОВАНИЕ ЛИНИИ
-    // -------------------------
-
     startLine(event) {
         const rect = this.canvas.getBoundingClientRect();
-        let pos = {
-            x: event.clientX - rect.left,
-            y: event.clientY - rect.top
-        };
+        let pos = { x: event.clientX - rect.left, y: event.clientY - rect.top };
         pos = this.snapToGrid(pos.x, pos.y);
 
         // начало линии с конца предыдущей, если есть
         const start = this.lastPoint ? { ...this.lastPoint } : pos;
 
-        this.currentLine = {
-            x1: start.x,
-            y1: start.y,
-            x2: start.x,
-            y2: start.y
-        };
-
+        this.currentLine = { x1: start.x, y1: start.y, x2: start.x, y2: start.y };
         this.isDrawing = true;
     }
 
@@ -56,13 +49,9 @@ export class FloorPlanEditor {
         if (!this.isDrawing || !this.currentLine) return;
 
         const rect = this.canvas.getBoundingClientRect();
-        let pos = {
-            x: event.clientX - rect.left,
-            y: event.clientY - rect.top
-        };
+        let pos = { x: event.clientX - rect.left, y: event.clientY - rect.top };
         pos = this.snapToGrid(pos.x, pos.y);
 
-        // строго горизонтальная или вертикальная
         const dx = Math.abs(pos.x - this.currentLine.x1);
         const dy = Math.abs(pos.y - this.currentLine.y1);
 
@@ -82,44 +71,27 @@ export class FloorPlanEditor {
         if (!this.isDrawing || !this.currentLine) return;
         this.isDrawing = false;
 
-        // запрос длины линии
-        const lenStr = prompt(
-            "Введите длину линии в пикселях (оставьте пустым для свободной длины):"
-        );
-
+        const lenStr = prompt("Введите длину линии в пикселях (оставьте пустым для свободной длины):");
         if (lenStr && !isNaN(lenStr)) {
             const length = parseInt(lenStr);
-
             const dx = this.currentLine.x2 - this.currentLine.x1;
             const dy = this.currentLine.y2 - this.currentLine.y1;
 
             if (Math.abs(dx) > Math.abs(dy)) {
-                // горизонтальная
-                this.currentLine.x2 =
-                    this.currentLine.x1 + Math.sign(dx) * length;
+                this.currentLine.x2 = this.currentLine.x1 + Math.sign(dx) * length;
                 this.currentLine.y2 = this.currentLine.y1;
             } else {
-                // вертикальная
                 this.currentLine.x2 = this.currentLine.x1;
-                this.currentLine.y2 =
-                    this.currentLine.y1 + Math.sign(dy) * length;
+                this.currentLine.y2 = this.currentLine.y1 + Math.sign(dy) * length;
             }
         }
 
-        // сохраняем линию
         this.lines.push({ ...this.currentLine });
-        this.lastPoint = {
-            x: this.currentLine.x2,
-            y: this.currentLine.y2
-        };
-
+        this.lastPoint = { x: this.currentLine.x2, y: this.currentLine.y2 };
         this.currentLine = null;
+
         this.draw();
     }
-
-    // -------------------------
-    // ОТРИСОВКА
-    // -------------------------
 
     drawGrid() {
         const ctx = this.ctx;
@@ -143,8 +115,6 @@ export class FloorPlanEditor {
 
     drawLines() {
         const ctx = this.ctx;
-
-        // сохранённые линии
         ctx.lineWidth = 3;
         ctx.strokeStyle = "#00bfff";
 
@@ -155,7 +125,6 @@ export class FloorPlanEditor {
             ctx.stroke();
         }
 
-        // предпросмотр текущей линии
         if (this.currentLine) {
             ctx.strokeStyle = "#ff0080";
             ctx.beginPath();
@@ -173,9 +142,8 @@ export class FloorPlanEditor {
     }
 
     // -------------------------
-    // UNDO
+    // Undo только последней линии
     // -------------------------
-
     undo() {
         if (this.lines.length === 0) {
             this.lastPoint = null;
@@ -185,7 +153,6 @@ export class FloorPlanEditor {
 
         this.lines.pop();
 
-        // корректно обновляем lastPoint
         if (this.lines.length > 0) {
             const lastLine = this.lines[this.lines.length - 1];
             this.lastPoint = { x: lastLine.x2, y: lastLine.y2 };
