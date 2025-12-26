@@ -10,9 +10,13 @@ export class FloorPlanEditor {
         this.lastPoint = null;
 
         this.isDrawing = false;
-        this.isFinishing = false;
+        this.finishLocked = false; // 🔒 ЖЁСТКИЙ LOCK
 
-        // mouse events (ТОЛЬКО на canvas)
+        // resize
+        this.resizeCanvas();
+        window.addEventListener("resize", () => this.resizeCanvas());
+
+        // mouse
         this.canvas.addEventListener("mousedown", (e) => this.startLine(e));
         this.canvas.addEventListener("mousemove", (e) => this.drawPreview(e));
         this.canvas.addEventListener("mouseup", () => this.finishLine());
@@ -29,6 +33,17 @@ export class FloorPlanEditor {
     }
 
     // ------------------------------------------------
+    resizeCanvas() {
+        const dpr = window.devicePixelRatio || 1;
+        const rect = this.canvas.getBoundingClientRect();
+
+        this.canvas.width = rect.width * dpr;
+        this.canvas.height = rect.height * dpr;
+        this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        this.draw();
+    }
+
     snapToGrid(x, y) {
         return {
             x: Math.round(x / this.gridSize) * this.gridSize,
@@ -36,7 +51,6 @@ export class FloorPlanEditor {
         };
     }
 
-    // ------------------------------------------------
     getLastLineDirection() {
         if (this.lines.length === 0) return null;
         const L = this.lines[this.lines.length - 1];
@@ -45,6 +59,8 @@ export class FloorPlanEditor {
 
     // ------------------------------------------------
     startLine(event) {
+        if (this.isDrawing) return;
+
         const rect = this.canvas.getBoundingClientRect();
         let pos = this.snapToGrid(
             event.clientX - rect.left,
@@ -75,13 +91,11 @@ export class FloorPlanEditor {
 
         const lastDir = this.getLastLineDirection();
 
-        // только перпендикулярно предыдущей
         if (lastDir === "horizontal") {
             pos.x = this.currentLine.x1;
         } else if (lastDir === "vertical") {
             pos.y = this.currentLine.y1;
         } else {
-            // первая линия — свободно, но строго H/V
             const dx = Math.abs(pos.x - this.currentLine.x1);
             const dy = Math.abs(pos.y - this.currentLine.y1);
             if (dx > dy) pos.y = this.currentLine.y1;
@@ -96,12 +110,13 @@ export class FloorPlanEditor {
 
     // ------------------------------------------------
     finishLine() {
-        if (!this.isDrawing || !this.currentLine || this.isFinishing) return;
+        // ❌ защита от повторов
+        if (!this.isDrawing || !this.currentLine || this.finishLocked) return;
 
-        this.isFinishing = true;
+        this.finishLocked = true;
         this.isDrawing = false;
 
-        // ----- длина линии -----
+        // 🧠 prompt вызывается ГАРАНТИРОВАННО ОДИН РАЗ
         const lenStr = prompt(
             "Введите длину линии в пикселях (оставьте пустым для свободной длины):"
         );
@@ -123,7 +138,6 @@ export class FloorPlanEditor {
             }
         }
 
-        // сохраняем линию ОДИН РАЗ
         this.lines.push({ ...this.currentLine });
 
         this.lastPoint = {
@@ -132,9 +146,13 @@ export class FloorPlanEditor {
         };
 
         this.currentLine = null;
-        this.isFinishing = false;
 
         this.draw();
+
+        // 🔓 снимаем lock с задержкой
+        setTimeout(() => {
+            this.finishLocked = false;
+        }, 0);
     }
 
     // ------------------------------------------------
@@ -160,7 +178,6 @@ export class FloorPlanEditor {
 
     drawLines() {
         const ctx = this.ctx;
-
         ctx.lineWidth = 3;
         ctx.strokeStyle = "#00bfff";
 
@@ -187,7 +204,6 @@ export class FloorPlanEditor {
         this.drawLines();
     }
 
-    // ------------------------------------------------
     undo() {
         if (this.lines.length === 0) return;
 
@@ -203,7 +219,6 @@ export class FloorPlanEditor {
         this.draw();
     }
 
-    // ------------------------------------------------
     setGridSize(size) {
         if (size > 0) {
             this.gridSize = size;

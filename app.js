@@ -69,7 +69,7 @@ document.getElementById("undoBtn")?.addEventListener("click", () => {
 // ПРОВЕРКА КЭША PWA
 // ------------------------------------
 async function checkModelCache() {
-    const cacheName = "hello-pwa-v5.0";
+    const cacheName = "hello-pwa-v7.0";
     if (!("caches" in window)) return;
 
     const cache = await caches.open(cacheName);
