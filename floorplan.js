@@ -4,20 +4,22 @@ export class FloorPlanEditor {
         this.ctx = this.canvas.getContext("2d");
 
         this.gridSize = 25;
+
         this.lines = [];
         this.currentLine = null;
-        this.isDrawing = false;
-        this.lastPoint = null; // конец предыдущей линии
+        this.lastPoint = null;
 
-        // события мыши
+        this.isDrawing = false;
+        this.isFinishing = false;
+
+        // mouse events (ТОЛЬКО на canvas)
         this.canvas.addEventListener("mousedown", (e) => this.startLine(e));
         this.canvas.addEventListener("mousemove", (e) => this.drawPreview(e));
-        this.canvas.addEventListener("mouseup", (e) => this.finishLine(e));
+        this.canvas.addEventListener("mouseup", () => this.finishLine());
 
-        // Ctrl+Z для Undo
+        // Ctrl + Z
         window.addEventListener("keydown", (e) => {
-            const isUndo = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z";
-            if (isUndo) {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
                 e.preventDefault();
                 this.undo();
             }
@@ -26,7 +28,7 @@ export class FloorPlanEditor {
         this.draw();
     }
 
-    // -------------------------
+    // ------------------------------------------------
     snapToGrid(x, y) {
         return {
             x: Math.round(x / this.gridSize) * this.gridSize,
@@ -34,30 +36,57 @@ export class FloorPlanEditor {
         };
     }
 
-    // -------------------------
+    // ------------------------------------------------
+    getLastLineDirection() {
+        if (this.lines.length === 0) return null;
+        const L = this.lines[this.lines.length - 1];
+        return L.x1 === L.x2 ? "vertical" : "horizontal";
+    }
+
+    // ------------------------------------------------
     startLine(event) {
         const rect = this.canvas.getBoundingClientRect();
-        let pos = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-        pos = this.snapToGrid(pos.x, pos.y);
+        let pos = this.snapToGrid(
+            event.clientX - rect.left,
+            event.clientY - rect.top
+        );
 
         const start = this.lastPoint ? { ...this.lastPoint } : pos;
 
-        this.currentLine = { x1: start.x, y1: start.y, x2: start.x, y2: start.y };
+        this.currentLine = {
+            x1: start.x,
+            y1: start.y,
+            x2: start.x,
+            y2: start.y
+        };
+
         this.isDrawing = true;
     }
 
+    // ------------------------------------------------
     drawPreview(event) {
         if (!this.isDrawing || !this.currentLine) return;
 
         const rect = this.canvas.getBoundingClientRect();
-        let pos = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-        pos = this.snapToGrid(pos.x, pos.y);
+        let pos = this.snapToGrid(
+            event.clientX - rect.left,
+            event.clientY - rect.top
+        );
 
-        const dx = Math.abs(pos.x - this.currentLine.x1);
-        const dy = Math.abs(pos.y - this.currentLine.y1);
+        const lastDir = this.getLastLineDirection();
 
-        if (dx > dy) pos.y = this.currentLine.y1;
-        else pos.x = this.currentLine.x1;
+        // только перпендикулярно предыдущей
+        if (lastDir === "horizontal") {
+            pos.x = this.currentLine.x1;
+        } else if (lastDir === "vertical") {
+            pos.y = this.currentLine.y1;
+        } else {
+            // первая линия — свободно, но строго H/V
+            const dx = Math.abs(pos.x - this.currentLine.x1);
+            const dy = Math.abs(pos.y - this.currentLine.y1);
+            if (dx > dy) pos.y = this.currentLine.y1;
+            else pos.x = this.currentLine.x1;
+        }
 
         this.currentLine.x2 = pos.x;
         this.currentLine.y2 = pos.y;
@@ -65,33 +94,50 @@ export class FloorPlanEditor {
         this.draw();
     }
 
+    // ------------------------------------------------
     finishLine() {
-        if (!this.isDrawing || !this.currentLine) return;
+        if (!this.isDrawing || !this.currentLine || this.isFinishing) return;
+
+        this.isFinishing = true;
         this.isDrawing = false;
 
-        const lenStr = prompt("Введите длину линии в пикселях (оставьте пустым для свободной длины):");
+        // ----- длина линии -----
+        const lenStr = prompt(
+            "Введите длину линии в пикселях (оставьте пустым для свободной длины):"
+        );
+
         if (lenStr && !isNaN(lenStr)) {
             const length = parseInt(lenStr);
+
             const dx = this.currentLine.x2 - this.currentLine.x1;
             const dy = this.currentLine.y2 - this.currentLine.y1;
 
             if (Math.abs(dx) > Math.abs(dy)) {
-                this.currentLine.x2 = this.currentLine.x1 + Math.sign(dx) * length;
+                this.currentLine.x2 =
+                    this.currentLine.x1 + Math.sign(dx) * length;
                 this.currentLine.y2 = this.currentLine.y1;
             } else {
                 this.currentLine.x2 = this.currentLine.x1;
-                this.currentLine.y2 = this.currentLine.y1 + Math.sign(dy) * length;
+                this.currentLine.y2 =
+                    this.currentLine.y1 + Math.sign(dy) * length;
             }
         }
 
+        // сохраняем линию ОДИН РАЗ
         this.lines.push({ ...this.currentLine });
-        this.lastPoint = { x: this.currentLine.x2, y: this.currentLine.y2 };
+
+        this.lastPoint = {
+            x: this.currentLine.x2,
+            y: this.currentLine.y2
+        };
+
         this.currentLine = null;
+        this.isFinishing = false;
 
         this.draw();
     }
 
-    // -------------------------
+    // ------------------------------------------------
     drawGrid() {
         const ctx = this.ctx;
         ctx.strokeStyle = "#ccc";
@@ -114,6 +160,7 @@ export class FloorPlanEditor {
 
     drawLines() {
         const ctx = this.ctx;
+
         ctx.lineWidth = 3;
         ctx.strokeStyle = "#00bfff";
 
@@ -140,19 +187,15 @@ export class FloorPlanEditor {
         this.drawLines();
     }
 
-    // -------------------------
+    // ------------------------------------------------
     undo() {
-        if (this.lines.length === 0) {
-            this.lastPoint = null;
-            this.draw();
-            return;
-        }
+        if (this.lines.length === 0) return;
 
         this.lines.pop();
 
         if (this.lines.length > 0) {
-            const lastLine = this.lines[this.lines.length - 1];
-            this.lastPoint = { x: lastLine.x2, y: lastLine.y2 };
+            const L = this.lines[this.lines.length - 1];
+            this.lastPoint = { x: L.x2, y: L.y2 };
         } else {
             this.lastPoint = null;
         }
@@ -160,10 +203,11 @@ export class FloorPlanEditor {
         this.draw();
     }
 
-    // -------------------------
+    // ------------------------------------------------
     setGridSize(size) {
-        if (typeof size !== "number" || size <= 0) return;
-        this.gridSize = size;
-        this.draw();
+        if (size > 0) {
+            this.gridSize = size;
+            this.draw();
+        }
     }
 }
