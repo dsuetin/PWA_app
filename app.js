@@ -18,67 +18,54 @@ async function installPWA() {
     }
 }
 
-document.getElementById("installBtn")?.addEventListener("click", installPWA);
+const installBtn = document.getElementById("installBtn");
+if (installBtn) {
+    installBtn.addEventListener("click", installPWA);
+}
 
 // ------------------------------------
-// ИМПОРТЫ
+// РЕЖИМ РИСОВАНИЯ ПЛАНА ПОМЕЩЕНИЙ
 // ------------------------------------
 import { FloorPlanEditor } from "./floorplan.js";
 import { LightsDrawer } from "./lights.js";
 
-// ------------------------------------
-// ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
-// ------------------------------------
-let floorEditor;
-let lightsDrawer;
-let currentMode = "lines"; // "lines" | "lights"
+let floorEditor = null;
+let lightsDrawer = null;
+let currentMode = "lines"; // lines | lights
 
-// ------------------------------------
-// ИНИЦИАЛИЗАЦИЯ
-// ------------------------------------
-window.addEventListener("DOMContentLoaded", () => {
+window.addEventListener("load", () => {
     floorEditor = new FloorPlanEditor("canvas");
     lightsDrawer = new LightsDrawer("canvas");
 
-    // Передаем ссылку на LightsDrawer в FloorPlanEditor
+    // связываем слои
     floorEditor.setLightsDrawer(lightsDrawer);
 
-    // режим по умолчанию — линии
     setMode("lines");
+});
 
-    // Переключение режимов
-    document.getElementById("modeLines")?.addEventListener("click", () => setMode("lines"));
-    document.getElementById("modeLights")?.addEventListener("click", () => setMode("lights"));
-
-    // Изменение сетки
-    document.getElementById("gridSizeInput")?.addEventListener("change", (e) => {
-        const size = parseInt(e.target.value);
-        if (!isNaN(size) && floorEditor) {
-            floorEditor.setGridSize(size);
-            redrawAll();
-        }
-    });
-
-    // Undo
-    document.getElementById("undoBtn")?.addEventListener("click", () => {
-        if (currentMode === "lines" && floorEditor) {
-            floorEditor.undo();
-        } else if (currentMode === "lights" && lightsDrawer) {
-            lightsDrawer.undo();
-        }
+// ------------------------------------
+// СЕТКА
+// ------------------------------------
+const gridInput = document.getElementById("gridSizeInput");
+gridInput?.addEventListener("change", (e) => {
+    const size = parseInt(e.target.value);
+    if (!isNaN(size) && floorEditor) {
+        floorEditor.setGridSize(size);
         redrawAll();
-    });
-
-    // Resize — перерисовка всего
-    window.addEventListener("resize", () => {
-        floorEditor.resizeCanvas();
-        redrawAll();
-    });
+    }
 });
 
 // ------------------------------------
 // ПЕРЕКЛЮЧЕНИЕ РЕЖИМОВ
 // ------------------------------------
+document.getElementById("modeLines")?.addEventListener("click", () => {
+    setMode("lines");
+});
+
+document.getElementById("modeLights")?.addEventListener("click", () => {
+    setMode("lights");
+});
+
 function setMode(mode) {
     currentMode = mode;
 
@@ -94,15 +81,116 @@ function setMode(mode) {
         setResultText("Режим: Свет");
     }
 
-    redrawAll(); // всегда рисуем линии + все круги
+    redrawAll();
 }
 
 // ------------------------------------
-// ПЕРЕРИСОВКА ВСЕГО
+// UNDO
+// ------------------------------------
+document.getElementById("undoBtn")?.addEventListener("click", () => {
+    if (!floorEditor || !lightsDrawer) return;
+
+    if (currentMode === "lines") {
+        floorEditor.undo();
+    } else if (currentMode === "lights") {
+        lightsDrawer.undo();
+    }
+
+    redrawAll();
+});
+
+// ------------------------------------
+// ЭКСПОРТ / ИМПОРТ CSV
+// ------------------------------------
+document.getElementById("exportBtn")?.addEventListener("click", exportCSV);
+
+document.getElementById("importBtn")?.addEventListener("click", () => {
+    document.getElementById("importInput").click();
+});
+
+document.getElementById("importInput")?.addEventListener("change", importCSV);
+
+function exportCSV() {
+    const schemeName = prompt("Введите имя схемы:");
+    if (!schemeName) return;
+
+    const now = new Date();
+    const ts = now
+        .toISOString()
+        .slice(0, 16)
+        .replace("T", "_")
+        .replace(":", "-");
+
+    const rows = [
+        "type,x1,y1,x2,y2",
+        ...floorEditor.exportData().map(l =>
+            `line,${l.x1},${l.y1},${l.x2},${l.y2}`
+        ),
+        ...lightsDrawer.exportData().map(l =>
+            `light,${l.x1},${l.y1},,`
+        )
+    ];
+
+    const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `geometry_${ts}_${schemeName}.csv`;
+    a.click();
+}
+
+async function importCSV(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const text = await file.text();
+    const rows = text.trim().split("\n").slice(1);
+
+    const lines = [];
+    const lights = [];
+
+    for (const r of rows) {
+        const [type, x1, y1, x2, y2] = r.split(",");
+
+        if (type === "line") {
+            lines.push({
+                x1: +x1,
+                y1: +y1,
+                x2: +x2,
+                y2: +y2
+            });
+        }
+
+        if (type === "light") {
+            lights.push({
+                x1: +x1,
+                y1: +y1
+            });
+        }
+    }
+
+    floorEditor.importData(lines);
+    lightsDrawer.importData(lights);
+
+    redrawAll();
+    e.target.value = "";
+}
+
+// ------------------------------------
+// RESIZE
+// ------------------------------------
+window.addEventListener("resize", () => {
+    if (!floorEditor) return;
+    floorEditor.resizeCanvas();
+    redrawAll();
+});
+
+// ------------------------------------
+// ОБЩАЯ ПЕРЕРИСОВКА
 // ------------------------------------
 function redrawAll() {
-    floorEditor.draw();      // линии и сетка
-    lightsDrawer.redraw();   // все круги поверх линий
+    if (!floorEditor || !lightsDrawer) return;
+    floorEditor.draw();
+    lightsDrawer.redraw();
 }
 
 function setResultText(text) {
@@ -111,10 +199,10 @@ function setResultText(text) {
 }
 
 // ------------------------------------
-// ПРОВЕРКА КЭША PWA
+// ПРОВЕРКА КЭША PWA (ВОЗВРАЩЕНО)
 // ------------------------------------
 async function checkModelCache() {
-    const cacheName = "hello-pwa-v14.0";
+    const cacheName = "hello-pwa-v15.0";
     if (!("caches" in window)) return;
 
     const cache = await caches.open(cacheName);
@@ -122,10 +210,12 @@ async function checkModelCache() {
     console.log("Всего файлов в кэше:", keys.length);
 }
 
-window.addEventListener("load", checkModelCache);
+window.addEventListener("load", () => {
+    checkModelCache();
+});
 
 // ------------------------------------
-// SERVICE WORKER
+// СООБЩЕНИЯ ОТ SERVICE WORKER
 // ------------------------------------
 if ("serviceWorker" in navigator) {
     navigator.serviceWorker

@@ -2,7 +2,8 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 
     <title>PWA Floor Plan Editor</title>
 
@@ -67,7 +68,7 @@
             padding: 6px 12px;
             border-radius: 6px;
             font-size: 13px;
-            text-align: center;
+            pointer-events: none;
         }
     </style>
 </head>
@@ -92,7 +93,13 @@
         >
     </label>
 
+    <button id="exportBtn">💾 Экспорт</button>
+    <button id="importBtn">📂 Импорт</button>
+
     <button id="installBtn">⬇️ Установить</button>
+
+    <!-- скрытый input для импорта -->
+    <input type="file" id="importInput" accept=".csv" hidden>
 </div>
 
 <!-- ================= CANVAS ================= -->
