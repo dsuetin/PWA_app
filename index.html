@@ -2,12 +2,10 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 
     <title>PWA Floor Plan Editor</title>
 
-    <!-- PWA -->
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#00bfff">
 
@@ -30,7 +28,7 @@
             background: #ffffff;
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 10px;
             padding: 0 10px;
             box-shadow: 0 2px 6px rgba(0,0,0,0.15);
             z-index: 10;
@@ -69,6 +67,7 @@
             padding: 6px 12px;
             border-radius: 6px;
             font-size: 13px;
+            text-align: center;
         }
     </style>
 </head>
@@ -76,7 +75,10 @@
 
 <!-- ================= TOOLBAR ================= -->
 <div id="toolbar">
-    <button id="floorBtn">✏️ План</button>
+    <button id="modeLines">✏️ Линии</button>
+    <button id="modeLights">💡 Свет</button>
+
+    <button id="undoBtn">↩ Отмена</button>
 
     <label>
         Сетка:
@@ -98,8 +100,8 @@
 
 <!-- ================= INFO ================= -->
 <div id="result">
-    <b>Режим: Рисование плана помещений</b><br>
-    Ctrl + Z — отмена последней линии
+    <b>Режим: Линии</b><br>
+    Ctrl + Z или кнопка «Отмена»
 </div>
 
 <!-- ================= SCRIPTS ================= -->

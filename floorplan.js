@@ -10,16 +10,24 @@ export class FloorPlanEditor {
         this.lastPoint = null;
 
         this.isDrawing = false;
-        this.finishLocked = false; // 🔒 ЖЁСТКИЙ LOCK
+        this.finishLocked = false;
+        this.enabled = true;
+
+        this.lightsDrawer = null; // ссылка на LightsDrawer
+
+        // Bind для событий мыши
+        this.mouseDownHandler = (e) => this.startLine(e);
+        this.mouseMoveHandler = (e) => this.drawPreview(e);
+        this.mouseUpHandler = () => this.finishLine();
 
         // resize
         this.resizeCanvas();
         window.addEventListener("resize", () => this.resizeCanvas());
 
         // mouse
-        this.canvas.addEventListener("mousedown", (e) => this.startLine(e));
-        this.canvas.addEventListener("mousemove", (e) => this.drawPreview(e));
-        this.canvas.addEventListener("mouseup", () => this.finishLine());
+        this.canvas.addEventListener("mousedown", this.mouseDownHandler);
+        this.canvas.addEventListener("mousemove", this.mouseMoveHandler);
+        this.canvas.addEventListener("mouseup", this.mouseUpHandler);
 
         // Ctrl + Z
         window.addEventListener("keydown", (e) => {
@@ -33,6 +41,18 @@ export class FloorPlanEditor {
     }
 
     // ------------------------------------------------
+    enable() {
+        this.enabled = true;
+    }
+
+    disable() {
+        this.enabled = false;
+    }
+
+    setLightsDrawer(lights) {
+        this.lightsDrawer = lights;
+    }
+
     resizeCanvas() {
         const dpr = window.devicePixelRatio || 1;
         const rect = this.canvas.getBoundingClientRect();
@@ -57,8 +77,8 @@ export class FloorPlanEditor {
         return L.x1 === L.x2 ? "vertical" : "horizontal";
     }
 
-    // ------------------------------------------------
     startLine(event) {
+        if (!this.enabled) return;
         if (this.isDrawing) return;
 
         const rect = this.canvas.getBoundingClientRect();
@@ -77,11 +97,11 @@ export class FloorPlanEditor {
         };
 
         this.isDrawing = true;
+        this.draw();
     }
 
-    // ------------------------------------------------
     drawPreview(event) {
-        if (!this.isDrawing || !this.currentLine) return;
+        if (!this.enabled || !this.isDrawing || !this.currentLine) return;
 
         const rect = this.canvas.getBoundingClientRect();
         let pos = this.snapToGrid(
@@ -108,33 +128,27 @@ export class FloorPlanEditor {
         this.draw();
     }
 
-    // ------------------------------------------------
     finishLine() {
-        // ❌ защита от повторов
-        if (!this.isDrawing || !this.currentLine || this.finishLocked) return;
+        if (!this.enabled || !this.isDrawing || !this.currentLine || this.finishLocked) return;
 
         this.finishLocked = true;
         this.isDrawing = false;
 
-        // 🧠 prompt вызывается ГАРАНТИРОВАННО ОДИН РАЗ
         const lenStr = prompt(
             "Введите длину линии в пикселях (оставьте пустым для свободной длины):"
         );
 
         if (lenStr && !isNaN(lenStr)) {
             const length = parseInt(lenStr);
-
             const dx = this.currentLine.x2 - this.currentLine.x1;
             const dy = this.currentLine.y2 - this.currentLine.y1;
 
             if (Math.abs(dx) > Math.abs(dy)) {
-                this.currentLine.x2 =
-                    this.currentLine.x1 + Math.sign(dx) * length;
+                this.currentLine.x2 = this.currentLine.x1 + Math.sign(dx) * length;
                 this.currentLine.y2 = this.currentLine.y1;
             } else {
                 this.currentLine.x2 = this.currentLine.x1;
-                this.currentLine.y2 =
-                    this.currentLine.y1 + Math.sign(dy) * length;
+                this.currentLine.y2 = this.currentLine.y1 + Math.sign(dy) * length;
             }
         }
 
@@ -149,13 +163,11 @@ export class FloorPlanEditor {
 
         this.draw();
 
-        // 🔓 снимаем lock с задержкой
         setTimeout(() => {
             this.finishLocked = false;
         }, 0);
     }
 
-    // ------------------------------------------------
     drawGrid() {
         const ctx = this.ctx;
         ctx.strokeStyle = "#ccc";
@@ -188,6 +200,7 @@ export class FloorPlanEditor {
             ctx.stroke();
         }
 
+        // Preview линия красная
         if (this.currentLine) {
             ctx.strokeStyle = "#ff0080";
             ctx.beginPath();
@@ -200,8 +213,14 @@ export class FloorPlanEditor {
     draw() {
         this.ctx.fillStyle = "#f8f8f8";
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
         this.drawGrid();
         this.drawLines();
+
+        // ⚡ нарисовать все круги поверх линий
+        if (this.lightsDrawer) {
+            this.lightsDrawer.redraw();
+        }
     }
 
     undo() {
@@ -223,6 +242,21 @@ export class FloorPlanEditor {
         if (size > 0) {
             this.gridSize = size;
             this.draw();
+        }
+    }
+
+    setLineLength(length) {
+        if (this.currentLine && !isNaN(length)) {
+            const dx = this.currentLine.x2 - this.currentLine.x1;
+            const dy = this.currentLine.y2 - this.currentLine.y1;
+
+            if (Math.abs(dx) > Math.abs(dy)) {
+                this.currentLine.x2 = this.currentLine.x1 + Math.sign(dx) * length;
+                this.currentLine.y2 = this.currentLine.y1;
+            } else {
+                this.currentLine.x2 = this.currentLine.x1;
+                this.currentLine.y2 = this.currentLine.y1 + Math.sign(dy) * length;
+            }
         }
     }
 }
