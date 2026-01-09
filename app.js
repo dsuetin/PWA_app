@@ -202,7 +202,7 @@ function setResultText(text) {
 // ПРОВЕРКА КЭША PWA (ВОЗВРАЩЕНО)
 // ------------------------------------
 async function checkModelCache() {
-    const cacheName = "hello-pwa-v15.0";
+    const cacheName = "hello-pwa-v20.0";
     if (!("caches" in window)) return;
 
     const cache = await caches.open(cacheName);
