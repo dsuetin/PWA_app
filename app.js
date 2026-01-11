@@ -24,7 +24,7 @@ if (installBtn) {
 }
 
 // ------------------------------------
-// РЕЖИМ РИСОВАНИЯ ПЛАНА ПОМЕЩЕНИЙ
+// РЕЖИМ РИСОВАНИЯ
 // ------------------------------------
 import { FloorPlanEditor } from "./floorplan.js";
 import { LightsDrawer } from "./lights.js";
@@ -37,8 +37,9 @@ window.addEventListener("load", () => {
     floorEditor = new FloorPlanEditor("canvas");
     lightsDrawer = new LightsDrawer("canvas");
 
-    // связываем слои
+    // связываем редакторы
     floorEditor.setLightsDrawer(lightsDrawer);
+    lightsDrawer.setEditor(floorEditor);
 
     setMode("lines");
 });
@@ -58,13 +59,8 @@ gridInput?.addEventListener("change", (e) => {
 // ------------------------------------
 // ПЕРЕКЛЮЧЕНИЕ РЕЖИМОВ
 // ------------------------------------
-document.getElementById("modeLines")?.addEventListener("click", () => {
-    setMode("lines");
-});
-
-document.getElementById("modeLights")?.addEventListener("click", () => {
-    setMode("lights");
-});
+document.getElementById("modeLines")?.addEventListener("click", () => setMode("lines"));
+document.getElementById("modeLights")?.addEventListener("click", () => setMode("lights"));
 
 function setMode(mode) {
     currentMode = mode;
@@ -73,9 +69,7 @@ function setMode(mode) {
         floorEditor.enable();
         lightsDrawer.disable();
         setResultText("Режим: Линии");
-    }
-
-    if (mode === "lights") {
+    } else if (mode === "lights") {
         floorEditor.disable();
         lightsDrawer.enable();
         setResultText("Режим: Свет");
@@ -90,11 +84,8 @@ function setMode(mode) {
 document.getElementById("undoBtn")?.addEventListener("click", () => {
     if (!floorEditor || !lightsDrawer) return;
 
-    if (currentMode === "lines") {
-        floorEditor.undo();
-    } else if (currentMode === "lights") {
-        lightsDrawer.undo();
-    }
+    if (currentMode === "lines") floorEditor.undo();
+    else if (currentMode === "lights") lightsDrawer.undo();
 
     redrawAll();
 });
@@ -103,11 +94,9 @@ document.getElementById("undoBtn")?.addEventListener("click", () => {
 // ЭКСПОРТ / ИМПОРТ CSV
 // ------------------------------------
 document.getElementById("exportBtn")?.addEventListener("click", exportCSV);
-
 document.getElementById("importBtn")?.addEventListener("click", () => {
     document.getElementById("importInput").click();
 });
-
 document.getElementById("importInput")?.addEventListener("change", importCSV);
 
 function exportCSV() {
@@ -152,19 +141,9 @@ async function importCSV(e) {
         const [type, x1, y1, x2, y2] = r.split(",");
 
         if (type === "line") {
-            lines.push({
-                x1: +x1,
-                y1: +y1,
-                x2: +x2,
-                y2: +y2
-            });
-        }
-
-        if (type === "light") {
-            lights.push({
-                x1: +x1,
-                y1: +y1
-            });
+            lines.push({ x1: +x1, y1: +y1, x2: +x2, y2: +y2 });
+        } else if (type === "light") {
+            lights.push({ x1: +x1, y1: +y1 });
         }
     }
 
@@ -190,7 +169,7 @@ window.addEventListener("resize", () => {
 function redrawAll() {
     if (!floorEditor || !lightsDrawer) return;
     floorEditor.draw();
-    lightsDrawer.redraw();
+    lightsDrawer.drawWithOffset(floorEditor.offsetX, floorEditor.offsetY);
 }
 
 function setResultText(text) {
@@ -199,10 +178,10 @@ function setResultText(text) {
 }
 
 // ------------------------------------
-// ПРОВЕРКА КЭША PWA (ВОЗВРАЩЕНО)
+// ПРОВЕРКА КЭША PWA
 // ------------------------------------
 async function checkModelCache() {
-    const cacheName = "hello-pwa-v23.0";
+    const cacheName = "hello-pwa-v31.0";
     if (!("caches" in window)) return;
 
     const cache = await caches.open(cacheName);
