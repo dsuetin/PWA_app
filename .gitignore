@@ -1,1 +1,6 @@
 .DS_Store
+*.jpg
+*.png
+model/
+imagenet_classes.json
+prepere_classes.py

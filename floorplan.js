@@ -1,69 +1,37 @@
 export class FloorPlanEditor {
     constructor(canvasId = "canvas") {
         this.canvas = document.getElementById(canvasId);
-        if (!this.canvas) throw new Error("Canvas not found: " + canvasId);
         this.ctx = this.canvas.getContext("2d");
 
-        // --- ПАРАМЕТРЫ (по умолчанию сетка 10)
+        /* -------- CONFIG -------- */
         this.gridSize = 10;
 
-        // --- ДАННЫЕ
+        /* -------- DATA -------- */
         this.lines = [];
         this.currentLine = null;
         this.lastPoint = null;
 
-        // --- СОСТОЯНИЯ
+        /* -------- STATE -------- */
+        this.enabled = true;
         this.isDrawing = false;
-        this.finishLocked = false; // жёсткий lock
-        this.enabled = true; // активен по умолчанию
+        this.finishLocked = false;
 
-        // ссылка на lights (подключается извне)
+        /* -------- LIGHTS -------- */
         this.lightsDrawer = null;
 
-        // бинды (чтобы можно было removeEventListener при необходимости)
-        this._mouseDown = (e) => this.startLine(e);
-        this._mouseMove = (e) => this.drawPreview(e);
-        this._mouseUp = (e) => this.finishLine(e);
-
-        // touch handlers сделаем умными (не мешают click для lights)
-        this._touchStart = (e) => {
-            // если редактор включен — мы собираемся рисовать -> блокируем дефолт (чтобы не скроллить)
-            if (this.enabled) {
-                e.preventDefault();
-                this.startLine(e);
-            } else {
-                // если редактор выключен, не мешаем — позволим click/рост взаимодействий (lights будет получать click)
-            }
-        };
-        this._touchMove = (e) => {
-            // preventDefault только если мы реально рисуем (isDrawing)
-            if (this.enabled && this.isDrawing) {
-                e.preventDefault();
-                this.drawPreview(e);
-            }
-        };
-        this._touchEnd = (e) => {
-            if (this.enabled && this.isDrawing) {
-                e.preventDefault();
-                this.finishLine(e);
-            }
-        };
-
-        // инициализация canvas/resize
+        /* -------- INIT -------- */
         this.resizeCanvas();
         window.addEventListener("resize", () => this.resizeCanvas());
 
-        // mouse events
-        this.canvas.addEventListener("mousedown", this._mouseDown);
-        this.canvas.addEventListener("mousemove", this._mouseMove);
-        this.canvas.addEventListener("mouseup", this._mouseUp);
+        /* -------- POINTER EVENTS -------- */
+        this.canvas.style.touchAction = "none";
 
-        // touch events — passive: false, но preventDefault вызывается только при нужде
-        this.canvas.addEventListener("touchstart", this._touchStart, { passive: false });
-        this.canvas.addEventListener("touchmove", this._touchMove, { passive: false });
-        this.canvas.addEventListener("touchend", this._touchEnd, { passive: false });
+        this.canvas.addEventListener("pointerdown", (e) => this.startLine(e));
+        this.canvas.addEventListener("pointermove", (e) => this.drawPreview(e));
+        this.canvas.addEventListener("pointerup", () => this.finishLine());
+        this.canvas.addEventListener("pointercancel", () => this.finishLine());
 
-        // Ctrl+Z undo
+        /* -------- UNDO -------- */
         window.addEventListener("keydown", (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
                 e.preventDefault();
@@ -71,37 +39,34 @@ export class FloorPlanEditor {
             }
         });
 
-        // начальная отрисовка
         this.draw();
     }
 
-    // -------------------------
-    // API: enable/disable, связь с lights
-    // -------------------------
+    /* ================= ENABLE / DISABLE ================= */
+
     enable() {
         this.enabled = true;
     }
 
     disable() {
         this.enabled = false;
-        // если в процессе рисования — отменим preview
         this.isDrawing = false;
         this.currentLine = null;
+        this.draw();
     }
 
     setLightsDrawer(ld) {
         this.lightsDrawer = ld;
     }
 
-    // -------------------------
-    // Canvas / grid
-    // -------------------------
+    /* ================= CANVAS ================= */
+
     resizeCanvas() {
         const dpr = window.devicePixelRatio || 1;
         const rect = this.canvas.getBoundingClientRect();
 
-        this.canvas.width = Math.max(1, Math.floor(rect.width * dpr));
-        this.canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+        this.canvas.width = rect.width * dpr;
+        this.canvas.height = rect.height * dpr;
         this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
         this.draw();
@@ -114,6 +79,16 @@ export class FloorPlanEditor {
         }
     }
 
+    /* ================= UTILS ================= */
+
+    getEventPos(e) {
+        const rect = this.canvas.getBoundingClientRect();
+        return {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        };
+    }
+
     snapToGrid(x, y) {
         return {
             x: Math.round(x / this.gridSize) * this.gridSize,
@@ -121,43 +96,21 @@ export class FloorPlanEditor {
         };
     }
 
-    // get pos for mouse/touch
-    getEventPos(e) {
-        const rect = this.canvas.getBoundingClientRect();
-
-        if (e.touches && e.touches.length > 0) {
-            return {
-                x: e.touches[0].clientX - rect.left,
-                y: e.touches[0].clientY - rect.top
-            };
-        }
-
-        return {
-            x: e.clientX - rect.left,
-            y: e.clientY - rect.top
-        };
-    }
-
-    // -------------------------
-    // Вспомогательные
-    // -------------------------
     getLastLineDirection() {
         if (this.lines.length === 0) return null;
         const L = this.lines[this.lines.length - 1];
         return L.x1 === L.x2 ? "vertical" : "horizontal";
     }
 
-    // -------------------------
-    // Start line: стартуем всегда из lastPoint если он есть, иначе из позиции клика
-    // -------------------------
-    startLine(event) {
-        if (!this.enabled) return;
-        if (this.isDrawing) return;
+    /* ================= LINE LOGIC ================= */
 
-        const p = this.getEventPos(event);
-        const pos = this.snapToGrid(p.x, p.y);
+    startLine(e) {
+        if (!this.enabled || this.isDrawing) return;
 
-        const start = this.lastPoint ? { ...this.lastPoint } : pos;
+        this.canvas.setPointerCapture(e.pointerId);
+
+        const p = this.snapToGrid(...Object.values(this.getEventPos(e)));
+        const start = this.lastPoint ? { ...this.lastPoint } : p;
 
         this.currentLine = {
             x1: start.x,
@@ -170,16 +123,10 @@ export class FloorPlanEditor {
         this.draw();
     }
 
-    // -------------------------
-    // Preview: axis-aligned logic, как в старой версии
-    // -------------------------
-    drawPreview(event) {
-        if (!this.enabled) return;
-        if (!this.isDrawing || !this.currentLine) return;
+    drawPreview(e) {
+        if (!this.enabled || !this.isDrawing || !this.currentLine) return;
 
-        const p = this.getEventPos(event);
-        let pos = this.snapToGrid(p.x, p.y);
-
+        let pos = this.snapToGrid(...Object.values(this.getEventPos(e)));
         const lastDir = this.getLastLineDirection();
 
         if (lastDir === "horizontal") {
@@ -199,17 +146,14 @@ export class FloorPlanEditor {
         this.draw();
     }
 
-    // -------------------------
-    // Finish: prompt length, push to lines, update lastPoint
-    // -------------------------
     finishLine() {
-        if (!this.enabled) return;
-        if (!this.isDrawing || !this.currentLine || this.finishLocked) return;
+        if (!this.enabled || !this.isDrawing || !this.currentLine || this.finishLocked) return;
 
         this.finishLocked = true;
         this.isDrawing = false;
 
         const lenStr = prompt("Введите длину линии в пикселях (оставьте пустым для свободной длины):");
+
         if (lenStr && !isNaN(lenStr)) {
             const length = parseInt(lenStr, 10);
             const dx = this.currentLine.x2 - this.currentLine.x1;
@@ -225,21 +169,16 @@ export class FloorPlanEditor {
         }
 
         this.lines.push({ ...this.currentLine });
-
-        this.lastPoint = {
-            x: this.currentLine.x2,
-            y: this.currentLine.y2
-        };
+        this.lastPoint = { x: this.currentLine.x2, y: this.currentLine.y2 };
 
         this.currentLine = null;
         this.draw();
 
-        setTimeout(() => { this.finishLocked = false; }, 0);
+        setTimeout(() => (this.finishLocked = false), 0);
     }
 
-    // -------------------------
-    // Drawing: background, grid, lines, preview, then lights
-    // -------------------------
+    /* ================= DRAW ================= */
+
     drawGrid() {
         const ctx = this.ctx;
         ctx.strokeStyle = "#ccc";
@@ -263,9 +202,9 @@ export class FloorPlanEditor {
     drawLines() {
         const ctx = this.ctx;
         ctx.lineWidth = 3;
-        ctx.strokeStyle = "#00bfff";
 
         for (const L of this.lines) {
+            ctx.strokeStyle = "#00bfff";
             ctx.beginPath();
             ctx.moveTo(L.x1, L.y1);
             ctx.lineTo(L.x2, L.y2);
@@ -282,21 +221,19 @@ export class FloorPlanEditor {
     }
 
     draw() {
-        // fill
         this.ctx.fillStyle = "#f8f8f8";
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         this.drawGrid();
         this.drawLines();
 
-        if (this.lightsDrawer && typeof this.lightsDrawer.redraw === "function") {
+        if (this.lightsDrawer?.redraw) {
             this.lightsDrawer.redraw();
         }
     }
 
-    // -------------------------
-    // Undo (как раньше)
-    // -------------------------
+    /* ================= UNDO ================= */
+
     undo() {
         if (this.lines.length === 0) return;
 
@@ -308,40 +245,6 @@ export class FloorPlanEditor {
         } else {
             this.lastPoint = null;
         }
-
-        this.draw();
-    }
-
-    // -------------------------
-    // Export / Import
-    // -------------------------
-    exportData() {
-        return this.lines.map(l => ({
-            type: "line",
-            x1: l.x1,
-            y1: l.y1,
-            x2: l.x2,
-            y2: l.y2
-        }));
-    }
-
-    importData(lines) {
-        this.lines = lines.map(l => ({
-            x1: l.x1,
-            y1: l.y1,
-            x2: l.x2,
-            y2: l.y2
-        }));
-
-        if (this.lines.length > 0) {
-            const L = this.lines[this.lines.length - 1];
-            this.lastPoint = { x: L.x2, y: L.y2 };
-        } else {
-            this.lastPoint = null;
-        }
-
-        this.currentLine = null;
-        this.isDrawing = false;
 
         this.draw();
     }
