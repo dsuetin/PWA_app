@@ -22,6 +22,7 @@ export class FloorPlanEditor {
 
         // ===== PAN =====
         this.isPanning = false;
+        this.panMoved = false;
         this.lastPanX = 0;
         this.lastPanY = 0;
         this.spacePressed = false;
@@ -29,19 +30,16 @@ export class FloorPlanEditor {
         // ===== LIGHTS =====
         this.lightsDrawer = null;
 
-        // ===== INIT =====
         this.resizeCanvas();
         window.addEventListener("resize", () => this.resizeCanvas());
 
         this.canvas.style.touchAction = "none";
 
-        // ===== POINTER EVENTS =====
         this.canvas.addEventListener("pointerdown", e => this.onPointerDown(e));
         this.canvas.addEventListener("pointermove", e => this.onPointerMove(e));
         this.canvas.addEventListener("pointerup", e => this.onPointerUp(e));
         this.canvas.addEventListener("pointercancel", e => this.onPointerUp(e));
 
-        // ===== KEYBOARD =====
         window.addEventListener("keydown", e => {
             if (e.code === "Space") this.spacePressed = true;
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
@@ -57,7 +55,6 @@ export class FloorPlanEditor {
         this.draw();
     }
 
-    // ------------------------------------------------
     setLightsDrawer(ld) {
         this.lightsDrawer = ld;
     }
@@ -70,7 +67,6 @@ export class FloorPlanEditor {
         this.draw();
     }
 
-    // ------------------------------------------------
     resizeCanvas() {
         const rect = this.canvas.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;
@@ -82,7 +78,6 @@ export class FloorPlanEditor {
         this.draw();
     }
 
-    // ------------------------------------------------
     screenToWorld(clientX, clientY) {
         const rect = this.canvas.getBoundingClientRect();
         return {
@@ -104,16 +99,13 @@ export class FloorPlanEditor {
         return L.x1 === L.x2 ? "vertical" : "horizontal";
     }
 
-    // ------------------------------------------------
     onPointerDown(e) {
         this.canvas.setPointerCapture(e.pointerId);
 
         // 🖐 PAN
-        if (
-            this.spacePressed ||
-            (e.pointerType === "touch" && !e.isPrimary)
-        ) {
+        if (this.spacePressed || (e.pointerType === "touch" && !e.isPrimary)) {
             this.isPanning = true;
+            this.panMoved = false;
             this.lastPanX = e.clientX;
             this.lastPanY = e.clientY;
             return;
@@ -135,11 +127,14 @@ export class FloorPlanEditor {
         this.isDrawing = true;
     }
 
-    // ------------------------------------------------
     onPointerMove(e) {
         if (this.isPanning) {
             const dx = e.clientX - this.lastPanX;
             const dy = e.clientY - this.lastPanY;
+
+            if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+                this.panMoved = true;
+            }
 
             this.offsetX += dx;
             this.offsetY += dy;
@@ -158,11 +153,9 @@ export class FloorPlanEditor {
 
         const lastDir = this.getLastLineDirection();
 
-        if (lastDir === "horizontal") {
-            pos.x = this.currentLine.x1;
-        } else if (lastDir === "vertical") {
-            pos.y = this.currentLine.y1;
-        } else {
+        if (lastDir === "horizontal") pos.x = this.currentLine.x1;
+        else if (lastDir === "vertical") pos.y = this.currentLine.y1;
+        else {
             const dx = Math.abs(pos.x - this.currentLine.x1);
             const dy = Math.abs(pos.y - this.currentLine.y1);
             if (dx > dy) pos.y = this.currentLine.y1;
@@ -175,10 +168,12 @@ export class FloorPlanEditor {
         this.draw();
     }
 
-    // ------------------------------------------------
     onPointerUp() {
+        // ⛔ если был pan — полностью игнорируем
         if (this.isPanning) {
             this.isPanning = false;
+            this.isDrawing = false;
+            this.currentLine = null;
             return;
         }
 
@@ -187,7 +182,6 @@ export class FloorPlanEditor {
         this.finishLocked = true;
         this.isDrawing = false;
 
-        // 📏 PROMPT ДЛИНЫ (как раньше)
         const lenStr = prompt(
             "Введите длину линии в пикселях (оставьте пустым для свободной длины):"
         );
@@ -220,7 +214,6 @@ export class FloorPlanEditor {
         setTimeout(() => (this.finishLocked = false), 0);
     }
 
-    // ------------------------------------------------
     drawGrid() {
         const ctx = this.ctx;
         ctx.strokeStyle = "#ccc";
@@ -284,7 +277,6 @@ export class FloorPlanEditor {
         }
     }
 
-    // ------------------------------------------------
     undo() {
         if (this.lines.length === 0) return;
 
@@ -302,6 +294,19 @@ export class FloorPlanEditor {
 
     setGridSize(size) {
         this.gridSize = size;
+        this.draw();
+    }
+
+    exportData() {
+        return this.lines.map(l => ({ ...l }));
+    }
+
+    importData(lines) {
+        this.lines = lines.map(l => ({ ...l }));
+        this.lastPoint = this.lines.length
+            ? { x: this.lines.at(-1).x2, y: this.lines.at(-1).y2 }
+            : null;
+        this.currentLine = null;
         this.draw();
     }
 }
