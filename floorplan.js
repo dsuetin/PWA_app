@@ -89,9 +89,11 @@ export class FloorPlanEditor {
         };
     }
 
+    // ------------------------------------------------
     onPointerDown(e) {
         this.canvas.setPointerCapture(e.pointerId);
 
+        // Панорамирование
         if (this.spacePressed || (e.pointerType === "touch" && !e.isPrimary)) {
             this.panController.start(e.clientX, e.clientY);
             return;
@@ -99,9 +101,16 @@ export class FloorPlanEditor {
 
         if (!this.enabled || this.isDrawing) return;
 
-        const p = this.screenToWorld(e.clientX, e.clientY);
-        const pos = this.snapToGrid(p.x, p.y);
-        const start = this.lineModel.lastPoint ? { ...this.lineModel.lastPoint } : pos;
+        let start;
+
+        if (this.lineModel.lastPoint) {
+            // Все последующие линии начинаются с конца предыдущей
+            start = { ...this.lineModel.lastPoint }; // без snap
+        } else {
+            // Первая линия — с ближайшего узла сетки под курсором
+            const p = this.screenToWorld(e.clientX, e.clientY);
+            start = this.snapToGrid(p.x, p.y);
+        }
 
         this.lineModel.startLine(start);
         this.isDrawing = true;
@@ -117,7 +126,7 @@ export class FloorPlanEditor {
         if (!this.isDrawing || !this.lineModel.currentLine) return;
 
         const p = this.screenToWorld(e.clientX, e.clientY);
-        let pos = this.snapToGrid(p.x, p.y);
+        let pos = this.snapToGrid(p.x, p.y); // snap для конечной точки
 
         const lastDir = this.lineModel.getLastLineDirection();
         if (lastDir === "horizontal") pos.x = this.lineModel.currentLine.x1;
