@@ -6,32 +6,34 @@ export class FloorPlanEditor {
         this.canvas = document.getElementById(canvasId);
         this.ctx = this.canvas.getContext("2d");
 
-        // ===== CONFIG =====
         this.gridSize = 10;
-
-        // ===== DATA =====
         this.lineModel = new LineModel();
         this.panController = new PanController();
 
-        // ===== STATE =====
         this.enabled = true;
         this.isDrawing = false;
         this.finishLocked = false;
         this.spacePressed = false;
-
-        // ===== LIGHTS =====
         this.lightsDrawer = null;
 
-        // ===== INIT =====
+        this.isPinching = false;
+        this.activeTouches = [];
+
         this.resizeCanvas();
         window.addEventListener("resize", () => this.resizeCanvas());
 
         this.canvas.style.touchAction = "none";
 
+        // Pointer events
         this.canvas.addEventListener("pointerdown", e => this.onPointerDown(e));
         this.canvas.addEventListener("pointermove", e => this.onPointerMove(e));
         this.canvas.addEventListener("pointerup", e => this.onPointerUp(e));
         this.canvas.addEventListener("pointercancel", e => this.onPointerUp(e));
+
+        // Touch events
+        this.canvas.addEventListener("touchstart", e => this.onTouchStart(e), { passive: false });
+        this.canvas.addEventListener("touchmove", e => this.onTouchMove(e), { passive: false });
+        this.canvas.addEventListener("touchend", e => this.onTouchEnd(e));
 
         // Keyboard
         window.addEventListener("keydown", e => {
@@ -41,7 +43,6 @@ export class FloorPlanEditor {
                 this.undo();
             }
         });
-
         window.addEventListener("keyup", e => {
             if (e.code === "Space") this.spacePressed = false;
         });
@@ -49,7 +50,6 @@ export class FloorPlanEditor {
         this.draw();
     }
 
-    // ------------------------------------------------
     setLightsDrawer(ld) {
         this.lightsDrawer = ld;
     }
@@ -63,15 +63,12 @@ export class FloorPlanEditor {
         this.draw();
     }
 
-    // ------------------------------------------------
     resizeCanvas() {
         const rect = this.canvas.getBoundingClientRect();
         const dpr = window.devicePixelRatio || 1;
-
         this.canvas.width = rect.width * dpr;
         this.canvas.height = rect.height * dpr;
         this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
         this.draw();
     }
 
@@ -90,11 +87,11 @@ export class FloorPlanEditor {
         };
     }
 
-    // ------------------------------------------------
+    // ---------------- Pointer Events ----------------
     onPointerDown(e) {
+        if (this.isPinching) return;
         this.canvas.setPointerCapture(e.pointerId);
 
-        // Панорамирование
         if (this.spacePressed || (e.pointerType === "touch" && !e.isPrimary)) {
             this.panController.start(e.clientX, e.clientY);
             return;
@@ -103,11 +100,8 @@ export class FloorPlanEditor {
         if (!this.enabled || this.isDrawing) return;
 
         let start;
-        if (this.lineModel.lastPoint) {
-            // Все последующие линии начинаются с конца предыдущей
-            start = { ...this.lineModel.lastPoint }; // без snap
-        } else {
-            // Первая линия — с ближайшего узла сетки под курсором
+        if (this.lineModel.lastPoint) start = { ...this.lineModel.lastPoint };
+        else {
             const p = this.screenToWorld(e.clientX, e.clientY);
             start = this.snapToGrid(p.x, p.y);
         }
@@ -117,6 +111,8 @@ export class FloorPlanEditor {
     }
 
     onPointerMove(e) {
+        if (this.isPinching) return;
+
         if (this.panController.isPanning) {
             this.panController.move(e.clientX, e.clientY);
             this.draw();
@@ -126,7 +122,7 @@ export class FloorPlanEditor {
         if (!this.isDrawing || !this.lineModel.currentLine) return;
 
         const p = this.screenToWorld(e.clientX, e.clientY);
-        let pos = this.snapToGrid(p.x, p.y); // snap для конечной точки
+        let pos = this.snapToGrid(p.x, p.y);
 
         const lastDir = this.lineModel.getLastLineDirection();
         if (lastDir === "horizontal") pos.x = this.lineModel.currentLine.x1;
@@ -155,35 +151,81 @@ export class FloorPlanEditor {
         this.finishLocked = true;
         this.isDrawing = false;
 
-        const finished = this.lineModel.finishLine(line => {
-            const lenStr = prompt(
-                "Введите длину линии в пикселях (оставьте пустым для свободной длины):"
-            );
-            if (lenStr && !isNaN(lenStr)) {
-                const length = parseInt(lenStr, 10);
-                const dx = line.x2 - line.x1;
-                const dy = line.y2 - line.y1;
+        // ---------------- Одно окно: prompt с отменой ----------------
+        const input = prompt("Введите длину линии в пикселях (Отмена = отменить):");
+        if (input === null) {
+            // Отмена
+            this.lineModel.currentLine = null;
+        } else if (!isNaN(input) && input.trim() !== "") {
+            const length = parseInt(input, 10);
+            const dx = this.lineModel.currentLine.x2 - this.lineModel.currentLine.x1;
+            const dy = this.lineModel.currentLine.y2 - this.lineModel.currentLine.y1;
 
-                if (Math.abs(dx) > Math.abs(dy)) {
-                    line.x2 = line.x1 + Math.sign(dx) * length;
-                    line.y2 = line.y1;
-                } else {
-                    line.x2 = line.x1;
-                    line.y2 = line.y1 + Math.sign(dy) * length;
-                }
+            if (Math.abs(dx) > Math.abs(dy)) {
+                this.lineModel.currentLine.x2 = this.lineModel.currentLine.x1 + Math.sign(dx) * length;
+                this.lineModel.currentLine.y2 = this.lineModel.currentLine.y1;
+            } else {
+                this.lineModel.currentLine.x2 = this.lineModel.currentLine.x1;
+                this.lineModel.currentLine.y2 = this.lineModel.currentLine.y1 + Math.sign(dy) * length;
             }
-        });
+            this.lineModel.finishLine(); // добавляем в массив lines
+        } else {
+            // пустой ввод = свободная длина
+            this.lineModel.finishLine();
+        }
 
-        if (!finished) return;
         this.draw();
         setTimeout(() => (this.finishLocked = false), 0);
     }
 
+    // ---------------- Pinch ----------------
+    onTouchStart(e) {
+        if (e.touches.length === 2) {
+            this.isPinching = true;
+            this.activeTouches = [...e.touches];
+
+            if (this.lineModel.currentLine) {
+                this.lineModel.currentLine = null;
+                this.isDrawing = false;
+                this.draw();
+            }
+
+            e.preventDefault();
+        }
+    }
+
+    onTouchMove(e) {
+        if (this.isPinching && e.touches.length === 2) {
+            const prevCenterX = (this.activeTouches[0].clientX + this.activeTouches[1].clientX) / 2;
+            const prevCenterY = (this.activeTouches[0].clientY + this.activeTouches[1].clientY) / 2;
+
+            const newCenterX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+            const newCenterY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+
+            const dx = newCenterX - prevCenterX;
+            const dy = newCenterY - prevCenterY;
+
+            this.panController.offsetX += dx;
+            this.panController.offsetY += dy;
+
+            this.activeTouches = [...e.touches];
+            this.draw();
+            e.preventDefault();
+        }
+    }
+
+    onTouchEnd(e) {
+        if (e.touches.length < 2) {
+            this.isPinching = false;
+            this.activeTouches = [];
+        }
+    }
+
+    // ---------------- Drawing ----------------
     drawGrid() {
         const ctx = this.ctx;
         ctx.strokeStyle = "#ccc";
         ctx.lineWidth = 1;
-
         const w = this.canvas.width;
         const h = this.canvas.height;
 
@@ -238,9 +280,25 @@ export class FloorPlanEditor {
         }
     }
 
+    cancelCurrentLine() {
+        if (this.lineModel.currentLine) {
+            this.lineModel.currentLine = null;
+            this.isDrawing = false;
+            this.draw();
+        }
+    }
+
     undo() {
-        this.lineModel.undo();
-        this.draw();
+        if (this.lineModel.lines.length > 0) {
+            this.lineModel.lines.pop();
+            if (this.lineModel.lines.length > 0) {
+                const last = this.lineModel.lines[this.lineModel.lines.length - 1];
+                this.lineModel.lastPoint = { x: last.x2, y: last.y2 };
+            } else {
+                this.lineModel.lastPoint = null;
+            }
+            this.draw();
+        }
     }
 
     setGridSize(size) {
