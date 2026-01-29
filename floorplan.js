@@ -1,4 +1,5 @@
 import { LineModel } from "./LineModel.js";
+import { PanController } from "./PanController.js";
 
 export class FloorPlanEditor {
     constructor(canvasId = "canvas") {
@@ -8,23 +9,14 @@ export class FloorPlanEditor {
         // ===== CONFIG =====
         this.gridSize = 10;
 
-        // ===== VIEW =====
-        this.offsetX = 0;
-        this.offsetY = 0;
-
         // ===== DATA =====
         this.lineModel = new LineModel();
+        this.panController = new PanController();
 
         // ===== STATE =====
         this.enabled = true;
         this.isDrawing = false;
         this.finishLocked = false;
-
-        // ===== PAN =====
-        this.isPanning = false;
-        this.panMoved = false;
-        this.lastPanX = 0;
-        this.lastPanY = 0;
         this.spacePressed = false;
 
         // ===== LIGHTS =====
@@ -36,13 +28,11 @@ export class FloorPlanEditor {
 
         this.canvas.style.touchAction = "none";
 
-        // ===== POINTER EVENTS =====
         this.canvas.addEventListener("pointerdown", e => this.onPointerDown(e));
         this.canvas.addEventListener("pointermove", e => this.onPointerMove(e));
         this.canvas.addEventListener("pointerup", e => this.onPointerUp(e));
         this.canvas.addEventListener("pointercancel", e => this.onPointerUp(e));
 
-        // ===== KEYBOARD =====
         window.addEventListener("keydown", e => {
             if (e.code === "Space") this.spacePressed = true;
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
@@ -84,12 +74,11 @@ export class FloorPlanEditor {
         this.draw();
     }
 
-    // ------------------------------------------------
     screenToWorld(clientX, clientY) {
         const rect = this.canvas.getBoundingClientRect();
         return {
-            x: clientX - rect.left - this.offsetX,
-            y: clientY - rect.top - this.offsetY
+            x: clientX - rect.left - this.panController.offsetX,
+            y: clientY - rect.top - this.panController.offsetY
         };
     }
 
@@ -100,16 +89,11 @@ export class FloorPlanEditor {
         };
     }
 
-    // ------------------------------------------------
     onPointerDown(e) {
         this.canvas.setPointerCapture(e.pointerId);
 
-        // 🖐 PAN
         if (this.spacePressed || (e.pointerType === "touch" && !e.isPrimary)) {
-            this.isPanning = true;
-            this.panMoved = false;
-            this.lastPanX = e.clientX;
-            this.lastPanY = e.clientY;
+            this.panController.start(e.clientX, e.clientY);
             return;
         }
 
@@ -123,20 +107,9 @@ export class FloorPlanEditor {
         this.isDrawing = true;
     }
 
-    // ------------------------------------------------
     onPointerMove(e) {
-        if (this.isPanning) {
-            const dx = e.clientX - this.lastPanX;
-            const dy = e.clientY - this.lastPanY;
-
-            if (Math.abs(dx) > 2 || Math.abs(dy) > 2) this.panMoved = true;
-
-            this.offsetX += dx;
-            this.offsetY += dy;
-
-            this.lastPanX = e.clientX;
-            this.lastPanY = e.clientY;
-
+        if (this.panController.isPanning) {
+            this.panController.move(e.clientX, e.clientY);
             this.draw();
             return;
         }
@@ -160,10 +133,9 @@ export class FloorPlanEditor {
         this.draw();
     }
 
-    // ------------------------------------------------
     onPointerUp() {
-        if (this.isPanning) {
-            this.isPanning = false;
+        if (this.panController.isPanning) {
+            this.panController.end();
             this.isDrawing = false;
             this.lineModel.currentLine = null;
             return;
@@ -199,7 +171,6 @@ export class FloorPlanEditor {
         setTimeout(() => (this.finishLocked = false), 0);
     }
 
-    // ------------------------------------------------
     drawGrid() {
         const ctx = this.ctx;
         ctx.strokeStyle = "#ccc";
@@ -208,14 +179,14 @@ export class FloorPlanEditor {
         const w = this.canvas.width;
         const h = this.canvas.height;
 
-        for (let x = -this.offsetX % this.gridSize; x < w; x += this.gridSize) {
+        for (let x = -this.panController.offsetX % this.gridSize; x < w; x += this.gridSize) {
             ctx.beginPath();
             ctx.moveTo(x, 0);
             ctx.lineTo(x, h);
             ctx.stroke();
         }
 
-        for (let y = -this.offsetY % this.gridSize; y < h; y += this.gridSize) {
+        for (let y = -this.panController.offsetY % this.gridSize; y < h; y += this.gridSize) {
             ctx.beginPath();
             ctx.moveTo(0, y);
             ctx.lineTo(w, y);
@@ -230,8 +201,8 @@ export class FloorPlanEditor {
         ctx.strokeStyle = "#00bfff";
         for (const L of this.lineModel.lines) {
             ctx.beginPath();
-            ctx.moveTo(L.x1 + this.offsetX, L.y1 + this.offsetY);
-            ctx.lineTo(L.x2 + this.offsetX, L.y2 + this.offsetY);
+            ctx.moveTo(L.x1 + this.panController.offsetX, L.y1 + this.panController.offsetY);
+            ctx.lineTo(L.x2 + this.panController.offsetX, L.y2 + this.panController.offsetY);
             ctx.stroke();
         }
 
@@ -239,8 +210,8 @@ export class FloorPlanEditor {
             const L = this.lineModel.currentLine;
             ctx.strokeStyle = "#ff0080";
             ctx.beginPath();
-            ctx.moveTo(L.x1 + this.offsetX, L.y1 + this.offsetY);
-            ctx.lineTo(L.x2 + this.offsetX, L.y2 + this.offsetY);
+            ctx.moveTo(L.x1 + this.panController.offsetX, L.y1 + this.panController.offsetY);
+            ctx.lineTo(L.x2 + this.panController.offsetX, L.y2 + this.panController.offsetY);
             ctx.stroke();
         }
     }
@@ -255,11 +226,10 @@ export class FloorPlanEditor {
         this.drawLines();
 
         if (this.lightsDrawer) {
-            this.lightsDrawer.drawWithOffset(this.offsetX, this.offsetY);
+            this.lightsDrawer.drawWithOffset(this.panController.offsetX, this.panController.offsetY);
         }
     }
 
-    // ------------------------------------------------
     undo() {
         this.lineModel.undo();
         this.draw();
