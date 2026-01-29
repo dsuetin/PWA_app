@@ -33,6 +33,7 @@ export class FloorPlanEditor {
         this.canvas.addEventListener("pointerup", e => this.onPointerUp(e));
         this.canvas.addEventListener("pointercancel", e => this.onPointerUp(e));
 
+        // Keyboard
         window.addEventListener("keydown", e => {
             if (e.code === "Space") this.spacePressed = true;
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
@@ -102,7 +103,6 @@ export class FloorPlanEditor {
         if (!this.enabled || this.isDrawing) return;
 
         let start;
-
         if (this.lineModel.lastPoint) {
             // Все последующие линии начинаются с конца предыдущей
             start = { ...this.lineModel.lastPoint }; // без snap
@@ -176,7 +176,6 @@ export class FloorPlanEditor {
 
         if (!finished) return;
         this.draw();
-
         setTimeout(() => (this.finishLocked = false), 0);
     }
 
