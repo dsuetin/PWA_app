@@ -1,3 +1,4 @@
+// lights.js
 export class LightsDrawer {
     constructor(canvasId = "canvas") {
         this.canvas = document.getElementById(canvasId);
@@ -65,11 +66,13 @@ export class LightsDrawer {
         this.redraw();
     }
 
-    drawWithOffset(offsetX, offsetY) {
+    drawWithOffset(offsetX = 0, offsetY = 0, scale = 1) {
         for (const l of this.lights) {
+            const screenX = l.x * scale + offsetX;
+            const screenY = l.y * scale + offsetY;
             this.ctx.beginPath();
             this.ctx.fillStyle = "yellow";
-            this.ctx.arc(l.x + offsetX, l.y + offsetY, this.radius, 0, Math.PI * 2);
+            this.ctx.arc(screenX, screenY, this.radius, 0, Math.PI * 2);
             this.ctx.fill();
             this.ctx.strokeStyle = "#b59f00";
             this.ctx.stroke();
@@ -79,7 +82,11 @@ export class LightsDrawer {
     redraw() {
         if (!this.editor) return;
         this.editor.draw();
-        this.drawWithOffset(this.editor.offsetX, this.editor.offsetY);
+        this.drawWithOffset(
+            this.editor.offsetX,
+            this.editor.offsetY,
+            this.editor.scale
+        );
     }
 
     exportData() {
