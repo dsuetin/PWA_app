@@ -1,117 +1,139 @@
 <!DOCTYPE html>
+
 <html lang="ru">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport"
           content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
 
-    <title>PWA Floor Plan Editor</title>
+<title>PWA Floor Plan Editor</title>
 
-    <link rel="manifest" href="/manifest.json">
-    <meta name="theme-color" content="#00bfff">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#00bfff">
 
-    <style>
-        html, body {
-            margin: 0;
-            padding: 0;
-            height: 100%;
-            overflow: hidden;
-            font-family: Arial, sans-serif;
-            background: #f0f0f0;
-        }
+<style>
+    html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        font-family: Arial, sans-serif;
+        background: #f0f0f0;
+    }
 
-        #toolbar {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 56px;
-            background: #ffffff;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 0 10px;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-            z-index: 10;
-        }
+    /* -------------------------------
+       TOOLBAR (mobile friendly)
+    -------------------------------- */
+    #toolbar {
+        position: fixed;
+        top: env(safe-area-inset-top);
+        left: 0;
+        right: 0;
+        height: 56px;
 
-        #toolbar button,
-        #toolbar input {
-            height: 36px;
-            font-size: 14px;
-        }
+        background: #ffffff;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 10px;
 
-        #toolbar label {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 14px;
-        }
+        overflow-x: auto;
+        overflow-y: hidden;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
 
-        #canvas {
-            position: absolute;
-            top: 56px;
-            left: 0;
-            width: 100vw;
-            height: calc(100vh - 56px);
-            background: #f8f8f8;
-            touch-action: none;
-        }
+        box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+        z-index: 10;
+    }
 
-        #result {
-            position: fixed;
-            bottom: 8px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(0,0,0,0.6);
-            color: #fff;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 13px;
-            pointer-events: none;
-        }
-    </style>
+    /* скрываем скроллбар */
+    #toolbar::-webkit-scrollbar {
+        display: none;
+    }
+
+    #toolbar button,
+    #toolbar input {
+        height: 36px;
+        font-size: 14px;
+        flex-shrink: 0;
+    }
+
+    #toolbar label {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 14px;
+        flex-shrink: 0;
+    }
+
+    /* -------------------------------
+       CANVAS
+    -------------------------------- */
+    #canvas {
+        position: absolute;
+        top: calc(56px + env(safe-area-inset-top));
+        left: 0;
+        width: 100vw;
+        height: calc(100vh - 56px - env(safe-area-inset-top));
+        background: #f8f8f8;
+        touch-action: none;
+    }
+
+    /* -------------------------------
+       RESULT HUD
+    -------------------------------- */
+    #result {
+        position: fixed;
+        bottom: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0,0,0,0.6);
+        color: #fff;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        pointer-events: none;
+    }
+</style>
+
+
 </head>
 <body>
 
-<!-- ================= TOOLBAR ================= -->
 <div id="toolbar">
     <button id="modeLines">✏️ Линии</button>
     <button id="modeLights">💡 Свет</button>
 
-    <button id="undoBtn">↩ Отмена</button>
+<button id="undoBtn">↩ Отмена</button>
 
-    <label>
-        Сетка:
-        <input
-            type="number"
-            id="gridSizeInput"
-            value="10"
-            min="5"
-            max="200"
-            step="5"
-        >
-    </label>
+<label>
+    Сетка:
+    <input
+        type="number"
+        id="gridSizeInput"
+        value="10"
+        min="5"
+        max="200"
+        step="5"
+    >
+</label>
 
-    <button id="exportBtn">💾 Экспорт</button>
-    <button id="importBtn">📂 Импорт</button>
+<button id="exportBtn">💾 Экспорт</button>
+<button id="importBtn">📂 Импорт</button>
 
-    <button id="installBtn">⬇️ Установить</button>
+<button id="installBtn">⬇️ Установить</button>
 
-    <!-- скрытый input для импорта -->
-    <input type="file" id="importInput" accept=".csv" hidden>
+<input type="file" id="importInput" accept=".csv" hidden>
+
 </div>
 
-<!-- ================= CANVAS ================= -->
 <canvas id="canvas"></canvas>
 
-<!-- ================= INFO ================= -->
 <div id="result">
     <b>Режим: Линии</b><br>
     Ctrl + Z или кнопка «Отмена»
 </div>
 
-<!-- ================= SCRIPTS ================= -->
 <script type="module" src="./app.js"></script>
 
 </body>
