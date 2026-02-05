@@ -320,7 +320,7 @@ export class LinesManager {
         const graph = this._buildGraphWithIntersections();
         const rawCycles = this._findCyclesInGraph(graph);
 
-        console.log("rawCycles:", rawCycles.length);
+        console.log("rawCycles найдено:", rawCycles.length);
 
         if (!rawCycles.length) {
             this.closedContour = null;
@@ -333,119 +333,118 @@ export class LinesManager {
 
         for (const seq of rawCycles) {
 
-            let pts = this._linesToPolygonPoints(seq);
-
-            // sequential dedupe
-            const clean = [];
-            for (const p of pts) {
-                const last = clean.at(-1);
-                if (!last || last.x !== p.x || last.y !== p.y) clean.push(p);
+            // ----------------------------
+            // 1. Построение вершин по сегментам
+            // ----------------------------
+            let pts = [];
+            for (const L of seq) {
+                // добавляем концы линии, избегая дубликатов
+                if (!pts.length || pts.at(-1).x !== L.x1 || pts.at(-1).y !== L.y1) pts.push({x:L.x1, y:L.y1});
+                pts.push({x:L.x2, y:L.y2});
             }
 
-            if (clean.length < 4) continue;
+            // ----------------------------
+            // 2. Убираем последовательные дубли
+            // ----------------------------
+            pts = pts.filter((p,i,a)=>!i||p.x!==a[i-1].x||p.y!==a[i-1].y);
+            if (pts.length < 4) continue;
 
-            // axis aligned only
+            // ----------------------------
+            // 3. Проверка ортогональности
+            // ----------------------------
             let ortho = true;
-            for (let i = 0; i < clean.length; i++) {
-                const a = clean[i];
-                const b = clean[(i + 1) % clean.length];
-                if (a.x !== b.x && a.y !== b.y) {
-                    ortho = false;
-                    break;
-                }
+            for (let i=0;i<pts.length;i++){
+                const a = pts[i];
+                const b = pts[(i+1)%pts.length];
+                if(a.x!==b.x && a.y!==b.y){ ortho=false; break; }
             }
+            if(!ortho) continue;
 
-            if (!ortho) continue;
+            // ----------------------------
+            // 4. Проверка площади
+            // ----------------------------
+            const area = this._computeAreaFromPoints(pts);
+            if(area<=1e-6) continue;
 
-            const area = this._computeAreaFromPoints(clean);
-            if (area <= 1e-6) continue;
-
-            if (area > bestArea) {
+            if(area>bestArea){
                 bestArea = area;
-                bestPoints = clean;
+                bestPoints = pts;
             }
         }
 
-        if (!bestPoints) {
+        if(!bestPoints){
             this.closedContour = null;
-            console.log("КОНТУР НЕ ОБРАЗОВАН — фильтры");
+            console.log("КОНТУР НЕ ОБРАЗОВАН — фильтры не пропустили циклы");
             return null;
         }
 
-        // =====================================================
-        // REMOVE COLLINEAR POINTS (THIS KILLS TAILS + 5th POINT)
-        // =====================================================
-
+        // ----------------------------
+        // 5. Убираем коллинеарные точки
+        // ----------------------------
         const removeCollinear = (pts) => {
-            let out = pts;
+            if (!pts || pts.length < 3) return pts;
+            const out = [];
 
-            let changed = true;
-            while (changed) {
-                changed = false;
-                const next = [];
+            for (let i = 0; i < pts.length; i++) {
+                const prev = pts[(i - 1 + pts.length) % pts.length];
+                const cur  = pts[i];
+                const next = pts[(i + 1) % pts.length];
 
-                for (let i = 0; i < out.length; i++) {
-                    const p = out[(i - 1 + out.length) % out.length];
-                    const c = out[i];
-                    const n = out[(i + 1) % out.length];
+                // ❌ обычная коллинеарность
+                const collinear = (prev.x === cur.x && cur.x === next.x) || (prev.y === cur.y && cur.y === next.y);
 
-                    if (
-                        (p.x === c.x && c.x === n.x) ||
-                        (p.y === c.y && c.y === n.y)
-                    ) {
-                        changed = true;
-                        continue;
-                    }
-
-                    next.push(c);
+                // ✅ исключение: если cur === first и замыкаем контур, не удаляем
+                if (i === 0 || i === pts.length - 1) {
+                    out.push(cur);
+                    continue;
                 }
 
-                out = next;
+                if (!collinear) {
+                    out.push(cur);
+                }
             }
 
             return out;
         };
 
+
         bestPoints = removeCollinear(bestPoints);
 
-        console.log("КОНТУР ЧИСТЫЙ:", bestPoints);
-
-        if (bestPoints.length < 4) {
-            console.warn("Контур развалился");
+        if(bestPoints.length<4){
+            console.warn("Контур стал слишком маленьким после удаления коллинеарных точек");
             this.closedContour = null;
             return null;
         }
 
-        // ============================================
-        // REPLACE ALL LINES WITH FINAL CONTOUR ONLY
-        // ============================================
-
+        // ----------------------------
+        // 6. Построение линий для контура
+        // ----------------------------
         const newLines = [];
-
-        for (let i = 0; i < bestPoints.length; i++) {
+        for(let i=0;i<bestPoints.length;i++){
             const a = bestPoints[i];
-            const b = bestPoints[(i + 1) % bestPoints.length];
-
+            const b = bestPoints[(i+1)%bestPoints.length];
             newLines.push({
-                x1: a.x,
-                y1: a.y,
-                x2: b.x,
-                y2: b.y,
-                _id: this._nextLineId++
+                x1:a.x, y1:a.y,
+                x2:b.x, y2:b.y,
+                _id:this._nextLineId++
             });
         }
 
         this.lines = newLines;
         this.closedContour = bestPoints;
+        this.currentLine = null;
+        this.lastPoint = null;
 
-        console.log("ФИНАЛ:", bestPoints.length, "вершин");
+        console.log("КОНТУР ЧИСТЫЙ! Вершины:", bestPoints);
 
-        if (window.floorEditor?.draw) {
-            window.floorEditor.draw();
-        }
+        // ----------------------------
+        // 7. Перерисовка
+        // ----------------------------
+        if(window.floorEditor?.draw) window.floorEditor.draw();
 
         return this.closedContour;
     }
+
 
 
 
