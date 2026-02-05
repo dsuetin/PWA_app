@@ -170,24 +170,33 @@ export class LinesManager {
         this.currentLine = null;
 
         this.closedContour = this.detectClosedContour();
-        if (this.closedContour) console.log("Контур замкнут!", this.closedContour);
+        if (this.closedContour) {
+            window.dispatchEvent(new Event("contour-closed"));
+        }
+        // if (this.closedContour) console.log("Контур замкнут!", this.closedContour);
 
         return true;
     }
 
     cancelCurrentLine() {
         this.currentLine = null;
-        this.closedContour = this.detectClosedContour();
-        if (this.closedContour) console.log("Контур замкнут!", this.closedContour);
+        // this.closedContour = this.detectClosedContour();
+
+        // if (this.closedContour) {
+        //     window.dispatchEvent(new Event("Контур замкнут"));
+        // }
+        // if (this.closedContour) console.log("Контур замкнут!", this.closedContour);
     }
 
     undo() {
+        if (this.closedContour) { this.closedContour = null; return; }
         if (this.currentLine) { this.currentLine = null; return; }
+        if (!this.lines.length) return;
         this.lines.pop();
         this.lastPoint = this.lines.length ? { x: this.lines.at(-1).x2, y: this.lines.at(-1).y2 } : null;
-        this.currentLine = null;
-        this.closedContour = this.detectClosedContour();
-        if (this.closedContour) console.log("Контур замкнут!", this.closedContour);
+        // this.currentLine = null;
+        // this.closedContour = this.detectClosedContour();
+        // if (this.closedContour) console.log("Контур замкнут!", this.closedContour);
     }
 
     // ---------- GRAPH + CYCLES ----------
@@ -300,28 +309,147 @@ export class LinesManager {
         return Math.abs(area / 2);
     }
 
-    detectClosedContour() {
-        if (!this.lines.length) { this.closedContour = null; return null; }
-        const graph = this._buildGraphWithIntersections();
-        const rawCycles = this._findCyclesInGraph(graph);
-        if (!rawCycles.length) { this.closedContour = null; return null; }
 
-        let best = null, bestArea = 0;
-        for (const seq of rawCycles) {
-            const ids = seq.map(L => L && L._id).filter(Boolean);
-            if (ids.length !== seq.length) continue;
-            if ((new Set(ids)).size !== ids.length) continue;
-            const pts = this._linesToPolygonPoints(seq);
-            const uniqPoints = new Set(pts.map(p => this._pointKey(p.x, p.y)));
-            if (uniqPoints.size < 4) continue;
-            const area = this._computeAreaFromPoints(pts);
-            if (area <= 1e-6) continue;
-            if (area > bestArea) { bestArea = area; best = seq; }
+    detectClosedContour() {
+        if (!this.lines.length) {
+            this.closedContour = null;
+            console.log("КОНТУР НЕ ОБРАЗОВАН — нет линий");
+            return null;
         }
 
-        this.closedContour = best || null;
+        const graph = this._buildGraphWithIntersections();
+        const rawCycles = this._findCyclesInGraph(graph);
+
+        console.log("rawCycles:", rawCycles.length);
+
+        if (!rawCycles.length) {
+            this.closedContour = null;
+            console.log("КОНТУР НЕ ОБРАЗОВАН — циклов нет");
+            return null;
+        }
+
+        let bestPoints = null;
+        let bestArea = 0;
+
+        for (const seq of rawCycles) {
+
+            let pts = this._linesToPolygonPoints(seq);
+
+            // sequential dedupe
+            const clean = [];
+            for (const p of pts) {
+                const last = clean.at(-1);
+                if (!last || last.x !== p.x || last.y !== p.y) clean.push(p);
+            }
+
+            if (clean.length < 4) continue;
+
+            // axis aligned only
+            let ortho = true;
+            for (let i = 0; i < clean.length; i++) {
+                const a = clean[i];
+                const b = clean[(i + 1) % clean.length];
+                if (a.x !== b.x && a.y !== b.y) {
+                    ortho = false;
+                    break;
+                }
+            }
+
+            if (!ortho) continue;
+
+            const area = this._computeAreaFromPoints(clean);
+            if (area <= 1e-6) continue;
+
+            if (area > bestArea) {
+                bestArea = area;
+                bestPoints = clean;
+            }
+        }
+
+        if (!bestPoints) {
+            this.closedContour = null;
+            console.log("КОНТУР НЕ ОБРАЗОВАН — фильтры");
+            return null;
+        }
+
+        // =====================================================
+        // REMOVE COLLINEAR POINTS (THIS KILLS TAILS + 5th POINT)
+        // =====================================================
+
+        const removeCollinear = (pts) => {
+            let out = pts;
+
+            let changed = true;
+            while (changed) {
+                changed = false;
+                const next = [];
+
+                for (let i = 0; i < out.length; i++) {
+                    const p = out[(i - 1 + out.length) % out.length];
+                    const c = out[i];
+                    const n = out[(i + 1) % out.length];
+
+                    if (
+                        (p.x === c.x && c.x === n.x) ||
+                        (p.y === c.y && c.y === n.y)
+                    ) {
+                        changed = true;
+                        continue;
+                    }
+
+                    next.push(c);
+                }
+
+                out = next;
+            }
+
+            return out;
+        };
+
+        bestPoints = removeCollinear(bestPoints);
+
+        console.log("КОНТУР ЧИСТЫЙ:", bestPoints);
+
+        if (bestPoints.length < 4) {
+            console.warn("Контур развалился");
+            this.closedContour = null;
+            return null;
+        }
+
+        // ============================================
+        // REPLACE ALL LINES WITH FINAL CONTOUR ONLY
+        // ============================================
+
+        const newLines = [];
+
+        for (let i = 0; i < bestPoints.length; i++) {
+            const a = bestPoints[i];
+            const b = bestPoints[(i + 1) % bestPoints.length];
+
+            newLines.push({
+                x1: a.x,
+                y1: a.y,
+                x2: b.x,
+                y2: b.y,
+                _id: this._nextLineId++
+            });
+        }
+
+        this.lines = newLines;
+        this.closedContour = bestPoints;
+
+        console.log("ФИНАЛ:", bestPoints.length, "вершин");
+
+        if (window.floorEditor?.draw) {
+            window.floorEditor.draw();
+        }
+
         return this.closedContour;
     }
+
+
+
+
 
     // ---------- IO ----------
     exportData() { return this.lines.map(l => ({ x1:l.x1,y1:l.y1,x2:l.x2,y2:l.y2,_id:l._id })); }

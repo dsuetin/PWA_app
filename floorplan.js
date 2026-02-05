@@ -33,6 +33,8 @@ export class FloorPlanEditor {
 
         this.lightsDrawer = null;
 
+        this.contourLocked = false;
+
         this.resizeCanvas();
         window.addEventListener("resize", () => this.resizeCanvas());
 
@@ -57,6 +59,11 @@ export class FloorPlanEditor {
         window.addEventListener("keyup", e => {
             if (e.code === "Space") this.spacePressed = false;
         });
+        window.addEventListener("contour-closed", () => {
+            alert("Контур замкнут");
+            this.contourLocked = true;
+            this.draw();
+        });
 
         this.draw();
     }
@@ -65,11 +72,8 @@ export class FloorPlanEditor {
         this.lightsDrawer = ld;
     }
 
-    enable() {
-        this.enabled = true;
-    }
-
-    disable() {
+    enable() { this.enabled = true; }
+    disable() { 
         this.enabled = false;
         this.isDrawing = false;
         this.linesManager.cancelCurrentLine();
@@ -84,8 +88,6 @@ export class FloorPlanEditor {
         this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         this.draw();
     }
-
-    // ---------- КООРДИНАТЫ ----------
 
     screenToWorld(clientX, clientY) {
         const rect = this.canvas.getBoundingClientRect();
@@ -106,11 +108,9 @@ export class FloorPlanEditor {
         return this.linesManager.snapToGrid(x, y);
     }
 
-    // ---------- POINTER ----------
-
     onPointerDown(e) {
+        if (this.contourLocked) return;
         this.canvas.setPointerCapture(e.pointerId);
-
         if (this.spacePressed || (e.pointerType === "touch" && !e.isPrimary)) {
             this.isPanning = true;
             this.lastPanX = e.clientX;
@@ -119,14 +119,11 @@ export class FloorPlanEditor {
             this.isDrawing = false;
             return;
         }
-
         if (!this.enabled || this.isDrawing || this.isPinching) return;
 
         const start = this.linesManager.lastPoint
             ? { ...this.linesManager.lastPoint }
-            : this.snapToGrid(
-                ...Object.values(this.screenToWorld(e.clientX, e.clientY))
-            );
+            : this.snapToGrid(...Object.values(this.screenToWorld(e.clientX, e.clientY)));
 
         this.linesManager.startLine(start);
         this.isDrawing = true;
@@ -145,7 +142,6 @@ export class FloorPlanEditor {
         }
 
         if (!this.isDrawing || !this.linesManager.currentLine) return;
-
         const p = this.screenToWorld(e.clientX, e.clientY);
         const pos = this.snapToGrid(p.x, p.y);
         this.linesManager.updateLine(pos);
@@ -153,11 +149,7 @@ export class FloorPlanEditor {
     }
 
     onPointerUp() {
-        if (this.isPanning) {
-            this.isPanning = false;
-            return;
-        }
-
+        if (this.isPanning) { this.isPanning = false; return; }
         if (!this.isDrawing || !this.linesManager.currentLine || this.finishLocked) return;
 
         this.finishLocked = true;
@@ -166,110 +158,95 @@ export class FloorPlanEditor {
         const lenStr = prompt("Введите длину линии в пикселях (Отмена — отменить линию):");
         if (lenStr === null) {
             this.linesManager.cancelCurrentLine();
-            this.draw();
+            // пересчёт света по текущему offset/scale
+            // if (this.lightsDrawer) this.lightsDrawer.redraw();
+            if (this.lightsDrawer) this.draw();
             this.finishLocked = false;
             return;
         }
 
-        if (lenStr !== "" && !isNaN(lenStr)) {
-            this.linesManager.finishLine(parseInt(lenStr, 10));
-        } else {
-            this.linesManager.finishLine();
-        }
+        if (lenStr !== "" && !isNaN(lenStr)) this.linesManager.finishLine(parseInt(lenStr, 10));
+        else this.linesManager.finishLine();
 
         this.draw();
-        setTimeout(() => (this.finishLocked = false), 0);
+        setTimeout(() => this.finishLocked = false, 0);
     }
 
     // ---------- PINCH ZOOM ----------
-
     onTouchStart(e) {
         if (e.touches.length === 2) {
             this.isPinching = true;
             this.linesManager.cancelCurrentLine();
             this.isDrawing = false;
-
             this.activeTouches = [...e.touches];
             this.lastPinchDist = this.getPinchDistance(e.touches);
             e.preventDefault();
         }
     }
-
     onTouchMove(e) {
         if (!this.isPinching || e.touches.length !== 2) return;
-
         const newDist = this.getPinchDistance(e.touches);
         const factor = newDist / this.lastPinchDist;
-
         const rect = this.canvas.getBoundingClientRect();
         const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
         const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
 
-        const worldBefore = {
-            x: (centerX - this.offsetX) / this.scale,
-            y: (centerY - this.offsetY) / this.scale
-        };
-
+        const worldBefore = { x: (centerX - this.offsetX) / this.scale, y: (centerY - this.offsetY) / this.scale };
         this.scale *= factor;
         this.scale = Math.max(this.MIN_SCALE, Math.min(this.MAX_SCALE, this.scale));
-
         this.offsetX = centerX - worldBefore.x * this.scale;
         this.offsetY = centerY - worldBefore.y * this.scale;
-
         this.lastPinchDist = newDist;
         this.draw();
         e.preventDefault();
     }
-
-    onTouchEnd(e) {
-        if (e.touches.length < 2) {
-            this.isPinching = false;
-            this.activeTouches = [];
-        }
-    }
-
-    getPinchDistance(touches) {
-        const dx = touches[0].clientX - touches[1].clientX;
-        const dy = touches[0].clientY - touches[1].clientY;
-        return Math.hypot(dx, dy);
-    }
+    onTouchEnd(e) { if (e.touches.length < 2) { this.isPinching = false; this.activeTouches = []; } }
+    getPinchDistance(touches) { return Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY); }
 
     // ---------- DRAW ----------
-
     drawGrid() {
         const ctx = this.ctx;
         ctx.strokeStyle = "#ccc";
         ctx.lineWidth = 1;
-
         const w = this.canvas.width;
         const h = this.canvas.height;
-
         const step = this.gridSize * this.scale;
         if (step < 5) return;
-
         const startX = -this.offsetX;
         const startY = -this.offsetY;
-
         const firstX = Math.floor(startX / step) * step;
         const firstY = Math.floor(startY / step) * step;
-
         for (let x = firstX; x <= startX + w; x += step) {
-            ctx.beginPath();
-            ctx.moveTo(x + this.offsetX, 0);
-            ctx.lineTo(x + this.offsetX, h);
-            ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(x + this.offsetX, 0); ctx.lineTo(x + this.offsetX, h); ctx.stroke();
         }
-
         for (let y = firstY; y <= startY + h; y += step) {
-            ctx.beginPath();
-            ctx.moveTo(0, y + this.offsetY);
-            ctx.lineTo(w, y + this.offsetY);
-            ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, y + this.offsetY); ctx.lineTo(w, y + this.offsetY); ctx.stroke();
         }
     }
 
+
     drawLines() {
         const ctx = this.ctx;
+
+        if (this.linesManager.closedContour) {
+            // рисуем только контур зелёным
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = "green";
+
+            const pts = this.linesManager.closedContour;
+            for (let i = 0; i < pts.length; i++) {
+                const a = this.worldToScreen(pts[i].x, pts[i].y);
+                const b = this.worldToScreen(pts[(i + 1) % pts.length].x, pts[(i + 1) % pts.length].y);
+                ctx.beginPath();
+                ctx.moveTo(a.x, a.y);
+                ctx.lineTo(b.x, b.y);
+                ctx.stroke();
+            }
+
+            return; // не рисуем обычные линии
+        }
+
+        // --- обычные линии, если контур не замкнут ---
         ctx.lineWidth = 3;
         ctx.strokeStyle = "#00bfff";
 
@@ -282,6 +259,7 @@ export class FloorPlanEditor {
             ctx.stroke();
         }
 
+        // рисуем текущую линию, если есть
         if (this.linesManager.currentLine) {
             const L = this.linesManager.currentLine;
             const a = this.worldToScreen(L.x1, L.y1);
@@ -294,27 +272,23 @@ export class FloorPlanEditor {
         }
     }
 
+
+
     draw() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        this.ctx.fillStyle = "#f8f8f8";
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
+        this.ctx.fillStyle = "#f8f8f8"; this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         this.drawGrid();
         this.drawLines();
-
-        if (this.lightsDrawer) {
-            this.lightsDrawer.drawWithOffset(
-                this.offsetX,
-                this.offsetY,
-                this.scale
-            );
-        }
+        if (this.lightsDrawer) this.lightsDrawer.drawWithOffset(this.offsetX, this.offsetY, this.scale);
     }
 
     // ---------- API ----------
-
     undo() {
-        this.linesManager.undo();
+        if (this.lightsDrawer && this.lightsDrawer.enabled) {
+            this.lightsDrawer.undo();
+        } else {
+            this.linesManager.undo();
+        }
         this.draw();
     }
 
@@ -324,12 +298,6 @@ export class FloorPlanEditor {
         this.draw();
     }
 
-    exportData() {
-        return this.linesManager.exportData();
-    }
-
-    importData(lines) {
-        this.linesManager.importData(lines);
-        this.draw();
-    }
+    exportData() { return this.linesManager.exportData(); }
+    importData(lines) { this.linesManager.importData(lines); this.draw(); }
 }

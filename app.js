@@ -87,6 +87,10 @@ document.getElementById("undoBtn")?.addEventListener("click", () => {
     if (currentMode === "lines") floorEditor.undo();
     else if (currentMode === "lights") lightsDrawer.undo();
 
+    if (floorEditor.linesManager.closedContour) {
+        floorEditor.contourLocked = false;
+    }
+
     redrawAll();
 });
 
@@ -99,33 +103,29 @@ document.getElementById("importBtn")?.addEventListener("click", () => {
 });
 document.getElementById("importInput")?.addEventListener("change", importCSV);
 
-function exportCSV() {
-    const schemeName = prompt("Введите имя схемы:");
-    if (!schemeName) return;
 
-    const now = new Date();
-    const ts = now
-        .toISOString()
-        .slice(0, 16)
-        .replace("T", "_")
-        .replace(":", "-");
+function exportCSV() {
+    const contour = floorEditor.linesManager.closedContour;
+
+    if (!contour) {
+        alert("Контур не замкнут");
+        return;
+    }
+
+    const pts = floorEditor.linesManager._linesToPolygonPoints(contour);
 
     const rows = [
-        "type,x1,y1,x2,y2",
-        ...floorEditor.exportData().map(l =>
-            `line,${l.x1},${l.y1},${l.x2},${l.y2}`
-        ),
-        ...lightsDrawer.exportData().map(l =>
-            `light,${l.x1},${l.y1},,`
-        )
+        "x,y",
+        ...pts.map(p => `${p.x},${p.y}`)
     ];
 
     const blob = new Blob([rows.join("\n")], { type: "text/csv" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `geometry_${ts}_${schemeName}.csv`;
+    a.download = "contour.csv";
     a.click();
 }
+
 
 async function importCSV(e) {
     const file = e.target.files[0];
@@ -166,10 +166,10 @@ window.addEventListener("resize", () => {
 // ------------------------------------
 // ОБЩАЯ ПЕРЕРИСОВКА
 // ------------------------------------
-function redrawAll() {
+window.redrawAll = function redrawAll() {
     if (!floorEditor || !lightsDrawer) return;
     floorEditor.draw();
-    lightsDrawer.drawWithOffset(floorEditor.offsetX, floorEditor.offsetY);
+    // lightsDrawer.drawWithOffset(floorEditor.offsetX, floorEditor.offsetY);
 }
 
 function setResultText(text) {
@@ -181,7 +181,7 @@ function setResultText(text) {
 // ПРОВЕРКА КЭША PWA
 // ------------------------------------
 async function checkModelCache() {
-    const cacheName = "hello-pwa-v31.0";
+    const cacheName = "hello-pwa-v185.0";
     if (!("caches" in window)) return;
 
     const cache = await caches.open(cacheName);
