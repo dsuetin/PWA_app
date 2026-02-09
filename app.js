@@ -19,9 +19,7 @@ async function installPWA() {
 }
 
 const installBtn = document.getElementById("installBtn");
-if (installBtn) {
-    installBtn.addEventListener("click", installPWA);
-}
+installBtn?.addEventListener("click", installPWA);
 
 // ------------------------------------
 // РЕЖИМ РИСОВАНИЯ
@@ -37,7 +35,6 @@ window.addEventListener("load", () => {
     floorEditor = new FloorPlanEditor("canvas");
     lightsDrawer = new LightsDrawer("canvas");
 
-    // связываем редакторы
     floorEditor.setLightsDrawer(lightsDrawer);
     lightsDrawer.setEditor(floorEditor);
 
@@ -81,18 +78,7 @@ function setMode(mode) {
 // ------------------------------------
 // UNDO
 // ------------------------------------
-document.getElementById("undoBtn")?.addEventListener("click", () => {
-    if (!floorEditor || !lightsDrawer) return;
-
-    if (currentMode === "lines") floorEditor.undo();
-    else if (currentMode === "lights") lightsDrawer.undo();
-
-    if (floorEditor.linesManager.closedContour) {
-        floorEditor.contourLocked = false;
-    }
-
-    redrawAll();
-});
+document.getElementById("undoBtn")?.addEventListener("click", () => floorEditor.undo());
 
 // ------------------------------------
 // ЭКСПОРТ / ИМПОРТ CSV
@@ -103,30 +89,84 @@ document.getElementById("importBtn")?.addEventListener("click", () => {
 });
 document.getElementById("importInput")?.addEventListener("change", importCSV);
 
-
-function exportCSV() {
+// ---------- ЭКСПОРТ CSV с датой и фильтром света ----------
+// ---------- ЭКСПОРТ CSV с датой и фильтром света и prompt ----------
+async function exportCSV() {
     const contour = floorEditor.linesManager.closedContour;
-
-    if (!contour) {
-        alert("Контур не замкнут");
+    if (!contour || contour.length < 2) {
+        alert("Контур не замкнут — экспорт невозможен");
         return;
     }
 
-    const pts = floorEditor.linesManager._linesToPolygonPoints(contour);
+    const lights = lightsDrawer.lights;
 
-    const rows = [
-        "x,y",
-        ...pts.map(p => `${p.x},${p.y}`)
-    ];
+    // Фильтруем светильники — только внутри контура
+    const isPointInPolygon = (x, y, polygon) => {
+        let inside = false;
+        for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+            const xi = polygon[i].x, yi = polygon[i].y;
+            const xj = polygon[j].x, yj = polygon[j].y;
+            const intersect = ((yi > y) !== (yj > y)) &&
+                              (x < (xj - xi) * (y - yi) / (yj - yi + 1e-10) + xi);
+            if (intersect) inside = !inside;
+        }
+        return inside;
+    };
 
-    const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+    const filteredLights = lights.filter(l => isPointInPolygon(l.x1, l.y1, contour));
+
+    // CSV строки
+    const rows = ["type,x1,y1,x2,y2"];
+
+    for (let i = 0; i < contour.length; i++) {
+        const a = contour[i];
+        const b = contour[(i + 1) % contour.length]; // последняя точка соединяется с первой
+        if (!a || !b) continue; // безопасная проверка
+        rows.push(`contour,${a.x},${a.y},${b.x},${b.y}`);
+    }
+    for (const l of filteredLights) {
+        rows.push(`light,${l.x1},${l.y1},,`);
+    }
+
+    const csvBlob = new Blob([rows.join("\n")], { type: "text/csv" });
+
+    // Генерация дефолтного имени с датой
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0,10).replace(/-/g,''); // YYYYMMDD
+    const timeStr = now.toTimeString().slice(0,8).replace(/:/g,''); // HHMMSS
+    const fileNameDefault = `floorplan_${dateStr}_${timeStr}.csv`;
+
+    // --- File System API (Chrome/Edge/Android) ---
+    if ('showSaveFilePicker' in window) {
+        try {
+            const opts = {
+                suggestedName: fileNameDefault,
+                types: [{ description: "CSV", accept: { "text/csv": [".csv"] } }]
+            };
+            const handle = await window.showSaveFilePicker(opts);
+            const writable = await handle.createWritable();
+            await writable.write(csvBlob);
+            await writable.close();
+            return;
+        } catch (e) {
+            console.warn("File System API отменено или не поддерживается:", e);
+        }
+    }
+
+    // --- fallback: prompt + обычный download ---
+    const fileName = prompt("Введите имя файла для экспорта:", fileNameDefault);
+    if (!fileName) return; // пользователь отменил
+    const finalName = fileName.endsWith(".csv") ? fileName : fileName + ".csv";
+
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "contour.csv";
+    a.href = URL.createObjectURL(csvBlob);
+    a.download = finalName;
     a.click();
+    URL.revokeObjectURL(a.href);
 }
 
 
+// ---------- ИМПОРТ CSV ----------
 async function importCSV(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -139,20 +179,20 @@ async function importCSV(e) {
 
     for (const r of rows) {
         const [type, x1, y1, x2, y2] = r.split(",");
-
-        if (type === "line") {
+        if (type === "contour") {
             lines.push({ x1: +x1, y1: +y1, x2: +x2, y2: +y2 });
         } else if (type === "light") {
             lights.push({ x1: +x1, y1: +y1 });
         }
     }
 
-    floorEditor.importData(lines);
+    floorEditor.linesManager.importData(lines);
     lightsDrawer.importData(lights);
 
     redrawAll();
-    e.target.value = "";
+    e.target.value = ""; // сброс input для повторного импорта
 }
+
 
 // ------------------------------------
 // RESIZE
@@ -169,7 +209,6 @@ window.addEventListener("resize", () => {
 window.redrawAll = function redrawAll() {
     if (!floorEditor || !lightsDrawer) return;
     floorEditor.draw();
-    // lightsDrawer.drawWithOffset(floorEditor.offsetX, floorEditor.offsetY);
 }
 
 function setResultText(text) {
@@ -178,29 +217,12 @@ function setResultText(text) {
 }
 
 // ------------------------------------
-// ПРОВЕРКА КЭША PWA
-// ------------------------------------
-async function checkModelCache() {
-    const cacheName = "hello-pwa-v185.0";
-    if (!("caches" in window)) return;
-
-    const cache = await caches.open(cacheName);
-    const keys = await cache.keys();
-    console.log("Всего файлов в кэше:", keys.length);
-}
-
-window.addEventListener("load", () => {
-    checkModelCache();
-});
-
-// ------------------------------------
-// СООБЩЕНИЯ ОТ SERVICE WORKER
+// SERVICE WORKER + ОБНОВЛЕНИЯ
 // ------------------------------------
 if ("serviceWorker" in navigator) {
-    navigator.serviceWorker
-        .register("/sw.js")
-        .then((reg) => console.log("SW зарегистрирован:", reg.scope))
-        .catch((err) => console.error("Ошибка регистрации SW:", err));
+    navigator.serviceWorker.register("/sw.js")
+        .then(reg => console.log("SW зарегистрирован:", reg.scope))
+        .catch(err => console.error("Ошибка регистрации SW:", err));
 
     navigator.serviceWorker.addEventListener("message", (event) => {
         const data = event.data;
@@ -208,21 +230,33 @@ if ("serviceWorker" in navigator) {
 
         switch (data.type) {
             case "SW_VERSION":
-                console.log("=== SERVICE WORKER VERSION ===");
-                console.log(data.version);
+                console.log("=== SERVICE WORKER VERSION ===", data.version);
                 break;
-
             case "NEW_VERSION":
                 console.log("Новая версия PWA доступна! Обновляем...");
-                setTimeout(() => window.location.reload(), 500);
+                // форсируем skipWaiting и reload
+                if (navigator.serviceWorker.controller) {
+                    navigator.serviceWorker.controller.postMessage({ type: 'SKIP_WAITING' });
+                    window.location.reload();
+                }
                 break;
-
             case "CACHE_ERROR":
                 console.error("Ошибка кэширования в SW:", data.error);
                 break;
-
             default:
                 console.warn("Неизвестное сообщение от SW:", data);
         }
+    });
+
+    // слушаем новые версии SW
+    navigator.serviceWorker.ready.then(reg => {
+        reg.addEventListener('updatefound', () => {
+            const newWorker = reg.installing;
+            newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    newWorker.postMessage({ type: 'SKIP_WAITING' });
+                }
+            });
+        });
     });
 }

@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="ru">
 <head>
     <meta charset="UTF-8" />
@@ -21,54 +20,34 @@
         background: #f0f0f0;
     }
 
-    /* -------------------------------
-       TOOLBAR (mobile friendly)
-    -------------------------------- */
+    /* TOOLBAR */
     #toolbar {
         position: fixed;
         top: env(safe-area-inset-top);
         left: 0;
         right: 0;
         height: 56px;
-
         background: #ffffff;
         display: flex;
         align-items: center;
         gap: 10px;
         padding: 0 10px;
-
         overflow-x: auto;
         overflow-y: hidden;
         white-space: nowrap;
         -webkit-overflow-scrolling: touch;
-
         box-shadow: 0 2px 6px rgba(0,0,0,0.15);
         z-index: 10;
     }
 
-    /* скрываем скроллбар */
-    #toolbar::-webkit-scrollbar {
-        display: none;
-    }
+    #toolbar::-webkit-scrollbar { display: none; }
 
     #toolbar button,
-    #toolbar input {
-        height: 36px;
-        font-size: 14px;
-        flex-shrink: 0;
-    }
+    #toolbar input { height: 36px; font-size: 14px; flex-shrink: 0; }
 
-    #toolbar label {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 14px;
-        flex-shrink: 0;
-    }
+    #toolbar label { display: flex; align-items: center; gap: 6px; font-size: 14px; flex-shrink: 0; }
 
-    /* -------------------------------
-       CANVAS
-    -------------------------------- */
+    /* CANVAS */
     #canvas {
         position: absolute;
         top: calc(56px + env(safe-area-inset-top));
@@ -79,9 +58,7 @@
         touch-action: none;
     }
 
-    /* -------------------------------
-       RESULT HUD
-    -------------------------------- */
+    /* RESULT HUD */
     #result {
         position: fixed;
         bottom: 8px;
@@ -95,36 +72,26 @@
         pointer-events: none;
     }
 </style>
-
-
 </head>
 <body>
 
 <div id="toolbar">
     <button id="modeLines">✏️ Линии</button>
     <button id="modeLights">💡 Свет</button>
+    <button id="undoBtn">↩ Отмена</button>
 
-<button id="undoBtn">↩ Отмена</button>
+    <label>
+        Сетка:
+        <input type="number" id="gridSizeInput" value="10" min="5" max="200" step="5">
+    </label>
 
-<label>
-    Сетка:
-    <input
-        type="number"
-        id="gridSizeInput"
-        value="10"
-        min="5"
-        max="200"
-        step="5"
-    >
-</label>
+    <button id="exportBtn">💾 Экспорт</button>
+    <button id="importBtn">📂 Импорт</button>
 
-<button id="exportBtn">💾 Экспорт</button>
-<button id="importBtn">📂 Импорт</button>
+    <button id="installBtn">⬇️ Установить</button>
+    <button id="updateBtn">🔄 Обновить PWA</button>
 
-<button id="installBtn">⬇️ Установить</button>
-
-<input type="file" id="importInput" accept=".csv" hidden>
-
+    <input type="file" id="importInput" accept=".csv" hidden>
 </div>
 
 <canvas id="canvas"></canvas>
@@ -135,6 +102,53 @@
 </div>
 
 <script type="module" src="./app.js"></script>
+
+<script>
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js')
+        .then(reg => console.log('SW зарегистрирован', reg.scope))
+        .catch(err => console.error('Ошибка регистрации SW:', err));
+
+    navigator.serviceWorker.addEventListener('message', (event) => {
+        const data = event.data;
+        if (!data) return;
+
+        switch(data.type) {
+            case 'SW_VERSION':
+                console.log('=== SERVICE WORKER VERSION ===', data.version);
+                break;
+            case 'NEW_VERSION':
+                console.log('Новая версия PWA доступна!');
+                break;
+            case 'CACHE_ERROR':
+                console.error('Ошибка кэширования SW:', data.error);
+                break;
+        }
+    });
+
+    // кнопка обновления PWA
+    const updateBtn = document.getElementById('updateBtn');
+    updateBtn?.addEventListener('click', () => {
+        if (navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({ type: 'SKIP_WAITING' });
+            window.location.reload();
+        }
+    });
+
+    // следим за появлением новой версии SW
+    navigator.serviceWorker.ready.then(reg => {
+        reg.addEventListener('updatefound', () => {
+            const newWorker = reg.installing;
+            newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                    newWorker.postMessage({ type: 'SKIP_WAITING' });
+                    console.log('Новая версия SW активирована автоматически');
+                }
+            });
+        });
+    });
+}
+</script>
 
 </body>
 </html>
