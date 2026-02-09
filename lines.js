@@ -189,15 +189,36 @@ export class LinesManager {
     }
 
     undo() {
-        if (this.closedContour) { this.closedContour = null; return; }
-        if (this.currentLine) { this.currentLine = null; return; }
+
+        // 1. Если был замкнутый контур — просто выходим из contour-режима
+        if (this.closedContour) {
+            this.closedContour = null;
+
+            // восстановить lastPoint — иначе нельзя продолжать рисовать
+            this.lastPoint = this.lines.length
+                ? { x: this.lines.at(-1).x2, y: this.lines.at(-1).y2 }
+                : null;
+
+            return;
+        }
+
+        // 2. Если рисовалась текущая линия — отменяем её
+        if (this.currentLine) {
+            this.currentLine = null;
+            return;
+        }
+
+        // 3. Удаляем последнюю линию
         if (!this.lines.length) return;
+
         this.lines.pop();
-        this.lastPoint = this.lines.length ? { x: this.lines.at(-1).x2, y: this.lines.at(-1).y2 } : null;
-        // this.currentLine = null;
-        // this.closedContour = this.detectClosedContour();
-        // if (this.closedContour) console.log("Контур замкнут!", this.closedContour);
+
+        // 4. Обновляем lastPoint
+        this.lastPoint = this.lines.length
+            ? { x: this.lines.at(-1).x2, y: this.lines.at(-1).y2 }
+            : null;
     }
+
 
     // ---------- GRAPH + CYCLES ----------
     _buildGraphWithIntersections() {
@@ -465,10 +486,10 @@ detectClosedContour() {
         });
     }
 
-    this.lines = newLines;
+    // this.lines = newLines;
     this.closedContour = bestPoints;
-    this.currentLine = null;
-    this.lastPoint = null;
+    // this.currentLine = null;
+    // this.lastPoint = null;
 
     console.log("КОНТУР ЧИСТЫЙ! Вершины:", bestPoints);
     console.log("Линий в контуре:", newLines.length);

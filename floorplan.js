@@ -284,13 +284,33 @@ export class FloorPlanEditor {
 
     // ---------- API ----------
     undo() {
-        if (this.lightsDrawer && this.lightsDrawer.enabled) {
+        // 1️⃣ Undo светильников, если они активны
+        if (this.lightsDrawer && this.lightsDrawer.enabled && this.lightsDrawer.lights.length) {
             this.lightsDrawer.undo();
-        } else {
-            this.linesManager.undo();
+            this.draw();
+            return;
         }
+
+        // 2️⃣ Undo линий / контура
+        if (this.linesManager) {
+            const wasContourLocked = !!this.linesManager.closedContour;
+
+            this.linesManager.undo();
+
+            // Если контур был снят, снимаем блокировку редактора
+            if (wasContourLocked) {
+                this.contourLocked = false;
+            }
+
+            // Обновляем lastPoint на уровне редактора (дополнительно)
+            this.draw();
+            return;
+        }
+
+        // 3️⃣ Если нечего отменять — просто перерисовать
         this.draw();
     }
+
 
     setGridSize(size) {
         this.gridSize = size;
