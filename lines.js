@@ -133,21 +133,63 @@ export class LinesManager {
         return limit;
     }
 
-    updateLine(pos) {
-        if (!this.currentLine) return;
-        let { x1, y1 } = this.currentLine;
-        let { x, y } = pos;
+updateLine(pos) {
+    if (!this.currentLine) return;
 
-        const lastDir = this.getLastLineDirection();
-        if (lastDir === "horizontal") x = x1;
-        else if (lastDir === "vertical") y = y1;
-        else if (Math.abs(x - x1) > Math.abs(y - y1)) y = y1;
-        else x = x1;
+    let { x1, y1 } = this.currentLine;
+    let { x, y } = pos;
 
-        const limited = this.applyLineConstraints(x1, y1, x, y);
-        this.currentLine.x2 = limited.x2;
-        this.currentLine.y2 = limited.y2;
+    // сохраняем горизонт/вертик направление как в стабильной версии
+    const lastDir = this.getLastLineDirection();
+    if (lastDir === "horizontal") x = x1;
+    else if (lastDir === "vertical") y = y1;
+    else if (Math.abs(x - x1) > Math.abs(y - y1)) y = y1;
+    else x = x1;
+
+    const limited = this.applyLineConstraints(x1, y1, x, y);
+    const newLine = { x1, y1, x2: limited.x2, y2: limited.y2 };
+
+    // проверка пересечения с уже нарисованными линиями
+    const intersects = this.lines.some(existing => this._linesIntersect(existing, newLine));
+
+    if (intersects) {
+        // запрещаем рисовать красную линию на существующую синюю
+        return;
     }
+
+    // если пересечения нет — обновляем текущую линию
+    this.currentLine.x2 = limited.x2;
+    this.currentLine.y2 = limited.y2;
+}
+
+// вспомогательная функция для проверки пересечения линий (только горизонт/вертик)
+_linesIntersect(a, b) {
+    // обе вертикальные
+    if (a.x1 === a.x2 && b.x1 === b.x2) {
+        if (a.x1 !== b.x1) return false;
+        const [ay1, ay2] = [Math.min(a.y1, a.y2), Math.max(a.y1, a.y2)];
+        const [by1, by2] = [Math.min(b.y1, b.y2), Math.max(b.y1, b.y2)];
+        return ay2 > by1 && by2 > ay1;
+    }
+
+    // обе горизонтальные
+    if (a.y1 === a.y2 && b.y1 === b.y2) {
+        if (a.y1 !== b.y1) return false;
+        const [ax1, ax2] = [Math.min(a.x1, a.x2), Math.max(a.x1, a.x2)];
+        const [bx1, bx2] = [Math.min(b.x1, b.x2), Math.max(b.x1, b.x2)];
+        return ax2 > bx1 && bx2 > ax1;
+    }
+
+    // одна вертикальная, одна горизонтальная
+    if (a.x1 === a.x2 && b.y1 === b.y2) {
+        return (b.x1 < a.x1 && a.x1 < b.x2 || b.x2 < a.x1 && a.x1 < b.x1) &&
+               (a.y1 < b.y1 && b.y1 < a.y2 || a.y2 < b.y1 && b.y1 < a.y1);
+    }
+    if (a.y1 === a.y2 && b.x1 === b.x2) return this._linesIntersect(b, a);
+
+    return false;
+}
+
 
     finishLine(length) {
         if (!this.currentLine) return;
