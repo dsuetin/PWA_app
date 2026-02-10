@@ -232,14 +232,6 @@ if ("serviceWorker" in navigator) {
             case "SW_VERSION":
                 console.log("=== SERVICE WORKER VERSION ===", data.version);
                 break;
-            case "NEW_VERSION":
-                console.log("Новая версия PWA доступна! Обновляем...");
-                // форсируем skipWaiting и reload
-                if (navigator.serviceWorker.controller) {
-                    navigator.serviceWorker.controller.postMessage({ type: 'SKIP_WAITING' });
-                    window.location.reload();
-                }
-                break;
             case "CACHE_ERROR":
                 console.error("Ошибка кэширования в SW:", data.error);
                 break;
@@ -247,16 +239,5 @@ if ("serviceWorker" in navigator) {
                 console.warn("Неизвестное сообщение от SW:", data);
         }
     });
-
-    // слушаем новые версии SW
-    navigator.serviceWorker.ready.then(reg => {
-        reg.addEventListener('updatefound', () => {
-            const newWorker = reg.installing;
-            newWorker.addEventListener('statechange', () => {
-                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                    newWorker.postMessage({ type: 'SKIP_WAITING' });
-                }
-            });
-        });
-    });
 }
+
