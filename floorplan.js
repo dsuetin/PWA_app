@@ -109,7 +109,7 @@ export class FloorPlanEditor {
     }
 
     onPointerDown(e) {
-        if (this.contourLocked) return;
+        // if (this.contourLocked) return;
         this.canvas.setPointerCapture(e.pointerId);
         if (this.spacePressed || (e.pointerType === "touch" && !e.isPrimary)) {
             this.isPanning = true;
@@ -119,7 +119,7 @@ export class FloorPlanEditor {
             this.isDrawing = false;
             return;
         }
-        if (!this.enabled || this.isDrawing || this.isPinching) return;
+        if (!this.enabled || this.isDrawing || this.isPinching || this.contourLocked) return;
 
         const start = this.linesManager.lastPoint
             ? { ...this.linesManager.lastPoint }
