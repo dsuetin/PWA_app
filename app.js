@@ -362,7 +362,7 @@ function setResultText(text) {
 // SERVICE WORKER + ОБНОВЛЕНИЯ
 // ------------------------------------
 if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/sw.js")
+    navigator.serviceWorker.register("./sw.js")
         .then(reg => console.log("SW зарегистрирован:", reg.scope))
         .catch(err => console.error("Ошибка регистрации SW:", err));
 
