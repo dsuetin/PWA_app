@@ -1,8 +1,8 @@
 // -------------------------
 // SERVICE WORKER (PWA)
 // -------------------------
-const CACHE_NAME = 'hello-pwa-v211.0';  // обнови версию при деплое
-const SW_VERSION = '2026-02-09_v211';
+const CACHE_NAME = 'hello-pwa-v222.0';  // обнови версию при деплое
+const SW_VERSION = '2026-02-09_v222';
 console.log('[SW] BUILD VERSION:', SW_VERSION);
 
 // const APP_SHELL = [

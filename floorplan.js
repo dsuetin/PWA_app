@@ -60,7 +60,7 @@ export class FloorPlanEditor {
             if (e.code === "Space") this.spacePressed = false;
         });
         window.addEventListener("contour-closed", () => {
-            alert("Контур замкнут");
+            alert("Контур замкнут, можно экспортировать геометрию и смету");
             this.contourLocked = true;
             this.draw();
         });
@@ -155,7 +155,7 @@ export class FloorPlanEditor {
         this.finishLocked = true;
         this.isDrawing = false;
 
-        const lenStr = prompt("Введите длину линии в пикселях (Отмена — отменить линию):");
+        const lenStr = prompt("Введите длину линии в см (Отмена — отменить линию):");
         if (lenStr === null) {
             this.linesManager.cancelCurrentLine();
             // пересчёт света по текущему offset/scale
