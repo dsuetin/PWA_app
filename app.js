@@ -53,6 +53,18 @@ gridInput?.addEventListener("change", (e) => {
     }
 });
 
+
+
+document.getElementById("modeZoom")?.addEventListener("click", () => {
+    floorEditor.navigationMode = "zoom";
+    setResultText("Режим: Zoom (2 пальца)");
+});
+
+document.getElementById("modePan")?.addEventListener("click", () => {
+    floorEditor.navigationMode = "pan";
+    setResultText("Режим: Pan (2 пальца)");
+});
+
 // ------------------------------------
 // ПЕРЕКЛЮЧЕНИЕ РЕЖИМОВ
 // ------------------------------------

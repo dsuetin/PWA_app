@@ -8,6 +8,9 @@ export class FloorPlanEditor {
 
         this.linesManager = new LinesManager(10);
         this.gridSize = this.linesManager.gridSize;
+        
+        this.navigationMode = "pan"; // "pan" | "zoom" — текущий режим для 2 пальцев
+
 
         // камера
         this.offsetX = 0;
@@ -109,25 +112,37 @@ export class FloorPlanEditor {
     }
 
     onPointerDown(e) {
-        // if (this.contourLocked) return;
-        this.canvas.setPointerCapture(e.pointerId);
-        if (this.spacePressed || (e.pointerType === "touch" && !e.isPrimary)) {
-            this.isPanning = true;
-            this.lastPanX = e.clientX;
-            this.lastPanY = e.clientY;
-            this.linesManager.cancelCurrentLine();
-            this.isDrawing = false;
+        if (!this.enabled) return;
+
+        if (e.pointerType === "touch" && e.touches?.length !== 2) {
+            // рисование одним пальцем
+            if (this.contourLocked) return;
+            const start = this.linesManager.lastPoint
+                ? { ...this.linesManager.lastPoint }
+                : this.snapToGrid(...Object.values(this.screenToWorld(e.clientX, e.clientY)));
+            this.linesManager.startLine(start);
+            this.isDrawing = true;
             return;
         }
-        if (!this.enabled || this.isDrawing || this.isPinching || this.contourLocked) return;
 
-        const start = this.linesManager.lastPoint
-            ? { ...this.linesManager.lastPoint }
-            : this.snapToGrid(...Object.values(this.screenToWorld(e.clientX, e.clientY)));
+        // блокируем панинг если в режиме zoom
+        if (this.navigationMode === "pan" && e.pointerType === "touch" && e.touches?.length === 2) {
+            this.isPinching = true;
+            this.activeTouches = [...e.touches];
+            this.lastPinchDist = this.getPinchDistance(e.touches);
+            this.isPanning = true;
+            return;
+        }
 
-        this.linesManager.startLine(start);
-        this.isDrawing = true;
+        if (this.navigationMode === "zoom" && e.pointerType === "touch" && e.touches?.length === 2) {
+            this.isPinching = true;
+            this.activeTouches = [...e.touches];
+            this.lastPinchDist = this.getPinchDistance(e.touches);
+            this.isPanning = false; // строго запрещаем панинг
+            return;
+        }
     }
+
 
     onPointerMove(e) {
         if (this.isPanning) {
@@ -180,26 +195,42 @@ export class FloorPlanEditor {
             this.isDrawing = false;
             this.activeTouches = [...e.touches];
             this.lastPinchDist = this.getPinchDistance(e.touches);
-            e.preventDefault();
+            // запрещаем панинг, если работает zoom
+            if (this.navigationMode === "zoom") {
+                e.preventDefault();
+            }
         }
     }
     onTouchMove(e) {
         if (!this.isPinching || e.touches.length !== 2) return;
+
         const newDist = this.getPinchDistance(e.touches);
         const factor = newDist / this.lastPinchDist;
         const rect = this.canvas.getBoundingClientRect();
         const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
         const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
-
         const worldBefore = { x: (centerX - this.offsetX) / this.scale, y: (centerY - this.offsetY) / this.scale };
-        this.scale *= factor;
-        this.scale = Math.max(this.MIN_SCALE, Math.min(this.MAX_SCALE, this.scale));
-        this.offsetX = centerX - worldBefore.x * this.scale;
-        this.offsetY = centerY - worldBefore.y * this.scale;
+
+        if (this.navigationMode === "zoom") {
+            // только zoom
+            this.scale *= factor;
+            this.scale = Math.max(this.MIN_SCALE, Math.min(this.MAX_SCALE, this.scale));
+            this.offsetX = centerX - worldBefore.x * this.scale;
+            this.offsetY = centerY - worldBefore.y * this.scale;
+        } else if (this.navigationMode === "pan") {
+            // только pan
+            const dx = e.touches[0].clientX - this.activeTouches[0].clientX;
+            const dy = e.touches[0].clientY - this.activeTouches[0].clientY;
+            this.offsetX += dx;
+            this.offsetY += dy;
+            this.activeTouches = [...e.touches];
+        }
+
         this.lastPinchDist = newDist;
         this.draw();
         e.preventDefault();
     }
+
     onTouchEnd(e) { if (e.touches.length < 2) { this.isPinching = false; this.activeTouches = []; } }
     getPinchDistance(touches) { return Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY); }
 

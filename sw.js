@@ -1,16 +1,18 @@
-const CACHE_NAME = 'hello-pwa-v224.0';
-const SW_VERSION = '2026-02-09_v224';
+const CACHE_NAME = 'hello-pwa-v235.0';
+
+// const BASE = "/PWA_app";
+const BASE = self.location.pathname.replace(/\/sw\.js$/, "");
 
 const APP_SHELL = [
-    './',
-    './index.html',
-    './app.js',
-    './style.css',
-    './manifest.json',
-    './floorplan.js',
-    './lights.js',
-    './icon-192.png',
-    './icon-512.png'
+    `${BASE}/`,
+    `${BASE}/index.html`,
+    `${BASE}/app.js`,
+    `${BASE}/style.css`,
+    `${BASE}/manifest.json`,
+    `${BASE}/floorplan.js`,
+    `${BASE}/lights.js`,
+    `${BASE}/icon-192.png`,
+    `${BASE}/icon-512.png`
 ];
 
 self.addEventListener('install', event => {
@@ -39,7 +41,7 @@ self.addEventListener('fetch', event => {
                 const clone = net.clone();
                 caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
                 return net;
-            }).catch(() => caches.match('./index.html'));
+            }).catch(() => caches.match(`${BASE}/index.html`));
         })
     );
 });
