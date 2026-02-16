@@ -114,6 +114,17 @@ export class FloorPlanEditor {
     onPointerDown(e) {
         if (!this.enabled) return;
 
+        // десктопная мышь — всегда рисуем
+        if (e.pointerType === "mouse") {
+            if (this.contourLocked) return;
+            const start = this.linesManager.lastPoint
+                ? { ...this.linesManager.lastPoint }
+                : this.snapToGrid(...Object.values(this.screenToWorld(e.clientX, e.clientY)));
+            this.linesManager.startLine(start);
+            this.isDrawing = true;
+            return;
+        }
+
         if (e.pointerType === "touch" && e.touches?.length !== 2) {
             // рисование одним пальцем
             if (this.contourLocked) return;
