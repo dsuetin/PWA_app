@@ -65,6 +65,9 @@ export class FloorPlanEditor {
         window.addEventListener("contour-closed", () => {
             alert("Контур замкнут, можно экспортировать геометрию и смету");
             this.contourLocked = true;
+
+            if (this.lightsDrawer) this.lightsDrawer.enabled = true;
+
             this.draw();
         });
 
@@ -113,6 +116,9 @@ export class FloorPlanEditor {
 
     onPointerDown(e) {
         if (!this.enabled) return;
+        if (this.lightsDrawer?.enabled) return;
+
+        this.canvas.setPointerCapture(e.pointerId);
 
         // десктопная мышь — всегда рисуем
         if (e.pointerType === "mouse") {
