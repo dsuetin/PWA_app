@@ -7,6 +7,8 @@ export class LinesManager {
         this.currentLine = null;
         this.lastPoint = null;
         this.closedContour = null;
+        this.selectedSegmentIndex = null;
+
     }
 
     // ---------- utilities ----------
@@ -593,6 +595,38 @@ export class LinesManager {
 
         return { v, h };
     }
-   
+
+    getSegmentAt(x, y, tolerance = 8) {
+        if (!this.closedContour) return null;
+
+        for (let i = 0; i < this.closedContour.length; i++) {
+            const a = this.closedContour[i];
+            const b = this.closedContour[(i + 1) % this.closedContour.length];
+
+            if (this.pointToSegmentDistance(x, y, a, b) < tolerance) {
+                return i;
+            }
+        }
+        return null;
+    }
+
+    pointToSegmentDistance(p, a, b) {
+        const A = p.x - a.x;
+        const B = p.y - a.y;
+        const C = b.x - a.x;
+        const D = b.y - a.y;
+
+        const dot = A * C + B * D;
+        const len = C * C + D * D;
+        let t = dot / len;
+
+        t = Math.max(0, Math.min(1, t));
+
+        const x = a.x + t * C;
+        const y = a.y + t * D;
+
+        return Math.hypot(p.x - x, p.y - y);
+    }
+
 
 }

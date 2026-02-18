@@ -65,6 +65,11 @@ document.getElementById("modePan")?.addEventListener("click", () => {
     setResultText("Режим: Pan (2 пальца)");
 });
 
+document.getElementById("deleteSegmentBtn").onclick = () => {
+    floorEditor.deleteSelectedSegment();
+};
+
+
 // ------------------------------------
 // ПЕРЕКЛЮЧЕНИЕ РЕЖИМОВ
 // ------------------------------------

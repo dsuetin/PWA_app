@@ -66,7 +66,7 @@ export class FloorPlanEditor {
             alert("Контур замкнут, можно экспортировать геометрию и смету");
             this.contourLocked = true;
 
-            if (this.lightsDrawer) this.lightsDrawer.enabled = true;
+            // if (this.lightsDrawer) this.lightsDrawer.enabled = true;
 
             this.draw();
         });
@@ -115,6 +115,19 @@ export class FloorPlanEditor {
     }
 
     onPointerDown(e) {
+
+        if (this.linesManager.closedContour) {
+            const world = this.screenToWorld(e.clientX, e.clientY);
+
+            const idx = this.linesManager.getSegmentAt(world.x, world.y);
+
+            if (idx !== null) {
+                this.linesManager.selectedSegmentIndex = idx;
+                this.draw();
+                return;
+            }
+        }
+
         if (!this.enabled) return;
         if (this.lightsDrawer?.enabled) return;
 
@@ -295,6 +308,16 @@ export class FloorPlanEditor {
                 ctx.lineTo(b.x, b.y);
                 ctx.stroke();
 
+                if (i === this.linesManager.selectedSegmentIndex) {
+                    ctx.strokeStyle = "red";
+                    ctx.lineWidth = 5;
+                    ctx.beginPath();
+                    ctx.moveTo(a.x, a.y);
+                    ctx.lineTo(b.x, b.y);
+                    ctx.stroke();
+                }
+
+
                 // -------- размеры --------
 
                 const dx = p2.x - p1.x;
@@ -319,6 +342,7 @@ export class FloorPlanEditor {
                 ctx.fillText(len + " см", 0, -10);
 
                 ctx.restore();
+                
             }
 
             return;
@@ -375,6 +399,33 @@ export class FloorPlanEditor {
             ctx.moveTo(a.x, a.y);
             ctx.lineTo(b.x, b.y);
             ctx.stroke();
+
+            // ---------- ДЛИНА ----------
+            const dx = L.x2 - L.x1;
+            const dy = L.y2 - L.y1;
+            const len = Math.round(Math.hypot(dx, dy)); // в см
+
+            const midX = (a.x + b.x) / 2;
+            const midY = (a.y + b.y) / 2;
+
+            ctx.save();
+
+            ctx.translate(midX, midY);
+
+            const isVertical = Math.abs(dx) < Math.abs(dy);
+
+            if (isVertical) {
+                ctx.rotate(-Math.PI / 2);
+            }
+
+            ctx.fillStyle = ctx.strokeStyle;
+            ctx.font = "14px sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+
+            ctx.fillText(len + " см", 0, -10);
+
+            ctx.restore();
         }
     }
 
@@ -423,6 +474,29 @@ export class FloorPlanEditor {
         this.linesManager.gridSize = size;
         this.draw();
     }
+
+    deleteSelectedSegment() {
+        const lm = this.linesManager;
+        const i = lm.selectedSegmentIndex;
+        if (i === null) return;
+
+        // undo snapshot
+        lm.undoStack.push(JSON.parse(JSON.stringify(lm.lines)));
+
+        lm.closedContour = null;
+
+        lm.lines.splice(i, 1);
+
+        // lastPoint = ближайшая вершина
+        const p = lm.lines[lm.lines.length - 1];
+        lm.lastPoint = { x: p.x2, y: p.y2 };
+
+        lm.selectedSegmentIndex = null;
+        this.contourLocked = false;
+
+        this.draw();
+    }
+
 
     exportData() { return this.linesManager.exportData(); }
     importData(lines) { this.linesManager.importData(lines); this.draw(); }
