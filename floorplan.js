@@ -277,22 +277,53 @@ export class FloorPlanEditor {
         const ctx = this.ctx;
 
         if (this.linesManager.closedContour) {
-            // рисуем только контур зелёным
             ctx.lineWidth = 3;
             ctx.strokeStyle = "green";
 
             const pts = this.linesManager.closedContour;
+
             for (let i = 0; i < pts.length; i++) {
-                const a = this.worldToScreen(pts[i].x, pts[i].y);
-                const b = this.worldToScreen(pts[(i + 1) % pts.length].x, pts[(i + 1) % pts.length].y);
+                const p1 = pts[i];
+                const p2 = pts[(i + 1) % pts.length];
+
+                const a = this.worldToScreen(p1.x, p1.y);
+                const b = this.worldToScreen(p2.x, p2.y);
+
+                // линия
                 ctx.beginPath();
                 ctx.moveTo(a.x, a.y);
                 ctx.lineTo(b.x, b.y);
                 ctx.stroke();
+
+                // -------- размеры --------
+
+                const dx = p2.x - p1.x;
+                const dy = p2.y - p1.y;
+                const len = Math.round(Math.hypot(dx, dy));
+
+                const midX = (a.x + b.x) / 2;
+                const midY = (a.y + b.y) / 2;
+
+                ctx.save();
+                ctx.translate(midX, midY);
+
+                const isVertical = Math.abs(dx) < Math.abs(dy);
+
+                if (isVertical) ctx.rotate(-Math.PI / 2);
+
+                ctx.fillStyle = "green";
+                ctx.font = "14px sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+
+                ctx.fillText(len + " см", 0, -10);
+
+                ctx.restore();
             }
 
-            return; // не рисуем обычные линии
+            return;
         }
+
 
         // --- обычные линии, если контур не замкнут ---
         ctx.lineWidth = 3;
@@ -305,6 +336,33 @@ export class FloorPlanEditor {
             ctx.moveTo(a.x, a.y);
             ctx.lineTo(b.x, b.y);
             ctx.stroke();
+
+            // ---------- ДЛИНА ----------
+            const dx = L.x2 - L.x1;
+            const dy = L.y2 - L.y1;
+            const len = Math.round(Math.hypot(dx, dy)); // в см
+
+            const midX = (a.x + b.x) / 2;
+            const midY = (a.y + b.y) / 2;
+
+            ctx.save();
+
+            ctx.translate(midX, midY);
+
+            const isVertical = Math.abs(dx) < Math.abs(dy);
+
+            if (isVertical) {
+                ctx.rotate(-Math.PI / 2);
+            }
+
+            ctx.fillStyle = ctx.strokeStyle;
+            ctx.font = "14px sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+
+            ctx.fillText(len + " см", 0, -10);
+
+            ctx.restore();
         }
 
         // рисуем текущую линию, если есть
