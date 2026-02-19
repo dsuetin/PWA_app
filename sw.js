@@ -1,4 +1,4 @@
-const CACHE_NAME = 'hello-pwa-v259.0';
+const CACHE_NAME = 'hello-pwa-v270.0';
 
 // const BASE = "/PWA_app";
 const BASE = self.location.pathname.replace(/\/sw\.js$/, "");

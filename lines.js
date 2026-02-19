@@ -233,16 +233,24 @@ export class LinesManager {
     }
 
     undo() {
+        // если есть snapshot (удаление сегмента), восстанавливаем его
+        if (this.undoStack && this.undoStack.length) {
+            const snap = this.undoStack.pop();
+            this.lines = snap.lines || [];
+            this.closedContour = snap.closedContour || null;
+            this.lastPoint = snap.lastPoint || (this.lines.length ? { x: this.lines.at(-1).x2, y: this.lines.at(-1).y2 } : null);
+            this.currentLine = null;
+            this.selectedSegmentIndex = null;
+            return;
+        }
 
+        // --- существующая логика undo (оставляем как есть) ---
         // 1. Если был замкнутый контур — просто выходим из contour-режима
         if (this.closedContour) {
             this.closedContour = null;
-
-            // восстановить lastPoint — иначе нельзя продолжать рисовать
             this.lastPoint = this.lines.length
                 ? { x: this.lines.at(-1).x2, y: this.lines.at(-1).y2 }
                 : null;
-
             return;
         }
 
@@ -596,37 +604,68 @@ export class LinesManager {
         return { v, h };
     }
 
-    getSegmentAt(x, y, tolerance = 8) {
-        if (!this.closedContour) return null;
+    getSegmentAt(worldX, worldY) {
+        const pts = this.closedContour;
+        if (!pts || pts.length < 2) return -1;
 
-        for (let i = 0; i < this.closedContour.length; i++) {
-            const a = this.closedContour[i];
-            const b = this.closedContour[(i + 1) % this.closedContour.length];
+        const HIT_DIST = 15; // чувствительность клика
 
-            if (this.pointToSegmentDistance(x, y, a, b) < tolerance) {
-                return i;
+        let bestIndex = -1;
+        let bestDist = Infinity;
+
+        for (let i = 0; i < pts.length; i++) {
+            const p1 = pts[i];
+            const p2 = pts[(i + 1) % pts.length];
+
+            const dist = this.distancePointToSegment(
+                worldX, worldY,
+                p1.x, p1.y,
+                p2.x, p2.y
+            );
+
+            if (dist < HIT_DIST && dist < bestDist) {
+                bestDist = dist;
+                bestIndex = i;
             }
         }
-        return null;
+
+        return bestIndex;
     }
 
-    pointToSegmentDistance(p, a, b) {
-        const A = p.x - a.x;
-        const B = p.y - a.y;
-        const C = b.x - a.x;
-        const D = b.y - a.y;
+
+
+    distancePointToSegment(px, py, x1, y1, x2, y2) {
+        const A = px - x1;
+        const B = py - y1;
+        const C = x2 - x1;
+        const D = y2 - y1;
 
         const dot = A * C + B * D;
-        const len = C * C + D * D;
-        let t = dot / len;
+        const lenSq = C * C + D * D;
 
-        t = Math.max(0, Math.min(1, t));
+        let param = -1;
+        if (lenSq !== 0) param = dot / lenSq;
 
-        const x = a.x + t * C;
-        const y = a.y + t * D;
+        let xx, yy;
 
-        return Math.hypot(p.x - x, p.y - y);
+        if (param < 0) {
+            xx = x1;
+            yy = y1;
+        } else if (param > 1) {
+            xx = x2;
+            yy = y2;
+        } else {
+            xx = x1 + param * C;
+            yy = y1 + param * D;
+        }
+
+        const dx = px - xx;
+        const dy = py - yy;
+
+        return Math.sqrt(dx * dx + dy * dy);
     }
+
+
 
 
 }
