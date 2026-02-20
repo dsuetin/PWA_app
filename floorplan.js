@@ -62,12 +62,48 @@ export class FloorPlanEditor {
         window.addEventListener("keyup", e => {
             if (e.code === "Space") this.spacePressed = false;
         });
+        
         window.addEventListener("contour-closed", () => {
             alert("Контур замкнут, можно экспортировать геометрию и смету");
             this.contourLocked = true;
 
-            // if (this.lightsDrawer) this.lightsDrawer.enabled = true;
+            const contourPts = this.linesManager.closedContour;
+            const oldLines = this.linesManager.lines.slice(); // исходный порядок
+            const newLines = [];
 
+            // сохраняем lastPoint
+            const lastPoint = this.linesManager.lastPoint ? { ...this.linesManager.lastPoint } : null;
+
+            for (const L of oldLines) {
+                // ищем точки линии внутри замкнутого контура
+                const startInside = contourPts.some(p => p.x === L.x1 && p.y === L.y1);
+                const endInside   = contourPts.some(p => p.x === L.x2 && p.y === L.y2);
+
+                if (startInside && endInside) {
+                    // линия полностью внутри — оставляем как есть
+                    newLines.push({ ...L });
+                } else {
+                    // линия выходит за пределы — обрезаем до точек контура
+                    // ищем ближайшую точку контура к start и end
+                    const closest = (x, y) => {
+                        let minDist = Infinity, pt = null;
+                        for (const p of contourPts) {
+                            const d = Math.hypot(p.x - x, p.y - y);
+                            if (d < minDist) {
+                                minDist = d;
+                                pt = p;
+                            }
+                        }
+                        return pt;
+                    };
+                    const newStart = startInside ? { x: L.x1, y: L.y1 } : closest(L.x1, L.y1);
+                    const newEnd   = endInside ? { x: L.x2, y: L.y2 } : closest(L.x2, L.y2);
+                    newLines.push({ x1: newStart.x, y1: newStart.y, x2: newEnd.x, y2: newEnd.y });
+                }
+            }
+
+            this.linesManager.lines = newLines;
+            this.linesManager.lastPoint = lastPoint; // сохраняем lastPoint
             this.draw();
         });
 
@@ -319,6 +355,7 @@ export class FloorPlanEditor {
                 const dx = p2.x - p1.x;
                 const dy = p2.y - p1.y;
                 const len = Math.round(Math.hypot(dx, dy));
+                if (len === 0) continue;
 
                 const midX = (a.x + b.x) / 2;
                 const midY = (a.y + b.y) / 2;
@@ -357,6 +394,7 @@ export class FloorPlanEditor {
             const dx = L.x2 - L.x1;
             const dy = L.y2 - L.y1;
             const len = Math.round(Math.hypot(dx, dy));
+            if (len === 0) continue;
 
             const midX = (a.x + b.x) / 2;
             const midY = (a.y + b.y) / 2;
@@ -471,7 +509,7 @@ export class FloorPlanEditor {
         if (idx === null || idx === undefined) return;
         if (!lm.closedContour || lm.closedContour.length < 4) return;
 
-        // --- snapshot для undo ---
+        // snapshot для undo
         if (!lm.undoStack) lm.undoStack = [];
         lm.undoStack.push({
             lines: JSON.parse(JSON.stringify(lm.lines)),
@@ -479,62 +517,38 @@ export class FloorPlanEditor {
             lastPoint: lm.lastPoint ? { ...lm.lastPoint } : null
         });
 
-        // --- делаем копию точек ---
+        // копия точек
         let pts = lm.closedContour.slice();
-
-        // убираем дублирующую последнюю точку
         const first = pts[0];
         const last  = pts[pts.length - 1];
         if (first.x === last.x && first.y === last.y) pts.pop();
 
-        // --- сегмент a->b, который нужно удалить ---
         const a = pts[idx];
         const b = pts[(idx + 1) % pts.length];
 
-        // --- ищем соответствующую линию в lines ---
-        let removed = false;
+        // удаляем только **одну** линию, соответствующую сегменту
         for (let i = lm.lines.length - 1; i >= 0; i--) {
             const L = lm.lines[i];
-
-            // проверяем, совпадают ли концы линии с a и b (в любом порядке) или линия включает a->b
-            const matches =
-                (L.x1 === a.x && L.y1 === a.y && L.x2 === b.x && L.y2 === b.y) ||
-                (L.x1 === b.x && L.y1 === b.y && L.x2 === a.x && L.y2 === a.y) ||
-                // добавляем проверку на частичное пересечение (висячий хвост)
-                (Math.min(L.x1,L.x2) <= a.x && a.x <= Math.max(L.x1,L.x2) &&
-                Math.min(L.y1,L.y2) <= a.y && a.y <= Math.max(L.y1,L.y2) &&
-                Math.min(L.x1,L.x2) <= b.x && b.x <= Math.max(L.x1,L.x2) &&
-                Math.min(L.y1,L.y2) <= b.y && b.y <= Math.max(L.y1,L.y2));
-
-            if (matches) {
+            if ((L.x1 === a.x && L.y1 === a.y && L.x2 === b.x && L.y2 === b.y) ||
+                (L.x1 === b.x && L.y1 === b.y && L.x2 === a.x && L.y2 === a.y)) {
                 lm.lines.splice(i, 1);
-                removed = true;
                 break; // удаляем только одну линию
             }
         }
 
-        if (!removed) {
-            console.warn("Линия для удаления не найдена, возможно это первая линия с хвостом");
-        }
-
-        // --- сбрасываем закрытый контур — линии становятся синими ---
+        // размыкаем контур
         lm.closedContour = null;
-
-        // --- сбрасываем выделение и текущую линию ---
         lm.selectedSegmentIndex = null;
         lm.currentLine = null;
 
-        // --- lastPoint для продолжения рисования — конец последней оставшейся линии ---
-    // --- lastPoint для продолжения рисования — ближайшая свободная вершина ---
+        // lastPoint — ближайшая свободная вершина
         if (lm.lines.length) {
-            // собираем все концы линий
             const endpoints = [];
             for (const L of lm.lines) {
                 endpoints.push({ x: L.x1, y: L.y1 });
                 endpoints.push({ x: L.x2, y: L.y2 });
             }
 
-            // исключаем точки, которые уже соединены двумя линиями (внутренние узлы)
             const degree = {};
             for (const L of lm.lines) {
                 const k1 = `${L.x1},${L.y1}`, k2 = `${L.x2},${L.y2}`;
@@ -545,7 +559,6 @@ export class FloorPlanEditor {
             const freePoints = endpoints.filter(p => degree[`${p.x},${p.y}`] === 1);
 
             if (freePoints.length) {
-                // выбираем ближайшую к удалённой линии точку
                 const removedMidpoint = { x: (a.x + b.x)/2, y: (a.y + b.y)/2 };
                 let closest = freePoints[0];
                 let minDist = Math.hypot(freePoints[0].x - removedMidpoint.x, freePoints[0].y - removedMidpoint.y);
@@ -565,11 +578,9 @@ export class FloorPlanEditor {
             lm.lastPoint = null;
         }
 
-
         this.contourLocked = false;
         this.draw();
     }
-
 
 
 
