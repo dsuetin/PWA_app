@@ -56,6 +56,8 @@ export class LinesManager {
     startLine(start) {
         if (!this.isStartAllowed(start.x, start.y)) return;
         this.currentLine = { x1: start.x, y1: start.y, x2: start.x, y2: start.y };
+        // используем lastPointVertical для ориентации линии
+        this.currentLineVertical = this.lastPointVertical ?? null;
     }
 
     applyLineConstraints(x1, y1, x2, y2) {
@@ -141,27 +143,42 @@ export class LinesManager {
         let { x1, y1 } = this.currentLine;
         let { x, y } = pos;
 
-        // сохраняем горизонт/вертик направление как в стабильной версии
-        const lastDir = this.getLastLineDirection();
-        if (lastDir === "horizontal") x = x1;
-        else if (lastDir === "vertical") y = y1;
-        else if (Math.abs(x - x1) > Math.abs(y - y1)) y = y1;
-        else x = x1;
+        // -----------------------------
+        // 1️⃣ Определяем направление линии относительно свободного конца
+        // -----------------------------
+        const dx = Math.abs(x - x1);
+        const dy = Math.abs(y - y1);
+        let vertical = dy > dx;
 
-        const limited = this.applyLineConstraints(x1, y1, x, y);
-        const newLine = { x1, y1, x2: limited.x2, y2: limited.y2 };
-
-        // проверка пересечения с уже нарисованными линиями
-        const intersects = this.lines.some(existing => this._linesIntersect(existing, newLine));
-
-        if (intersects) {
-            // запрещаем рисовать красную линию на существующую синюю
-            return;
+        // -----------------------------
+        // 2️⃣ Фиксируем координату перпендикулярно
+        // -----------------------------
+        if (vertical) {
+            x = x1; // вертикальная — X фиксируем
+        } else {
+            y = y1; // горизонтальная — Y фиксируем
         }
 
-        // если пересечения нет — обновляем текущую линию
-        this.currentLine.x2 = limited.x2;
-        this.currentLine.y2 = limited.y2;
+        // -----------------------------
+        // 3️⃣ Ограничения и normalize
+        // -----------------------------
+        const limited = this.applyLineConstraints(x1, y1, x, y);
+        const norm = vertical
+            ? this.normalizeSegment(x1, y1, x1, limited.y2)
+            : this.normalizeSegment(x1, y1, limited.x2, y1);
+
+        // -----------------------------
+        // 4️⃣ Проверка пересечения
+        // -----------------------------
+        const newLine = { x1, y1, x2: norm.x2, y2: norm.y2 };
+        const intersects = this.lines.some(existing => this._linesIntersect(existing, newLine));
+        if (intersects) return;
+
+        // -----------------------------
+        // 5️⃣ Применяем к текущей линии
+        // -----------------------------
+        this.currentLine.x2 = norm.x2;
+        this.currentLine.y2 = norm.y2;
     }
 
     // вспомогательная функция для проверки пересечения линий (только горизонт/вертик)
@@ -208,7 +225,11 @@ export class LinesManager {
             if (y1 === y2 && Math.abs(x2 - x1) > Math.abs(limit - x1)) x2 = limit;
         }
 
-        const L = { x1, y1, x2, y2, _id: this._nextLineId++ };
+
+        const norm = this.normalizeSegment(x1, y1, x2, y2);
+
+        const L = { x1: norm.x1, y1: norm.y1, x2: norm.x2, y2: norm.y2, _id: this._nextLineId++ };
+        // const L = { x1, y1, x2, y2, _id: this._nextLineId++ };
         this.lines.push(L);
         this.lastPoint = { x: L.x2, y: L.y2 };
         this.currentLine = null;
@@ -391,10 +412,8 @@ export class LinesManager {
             return null;
         }
 
-        // 1. Находим все циклы
         const graph = this._buildGraphWithIntersections();
         const rawCycles = this._findCyclesInGraph(graph);
-        console.log("rawCycles найдено:", rawCycles.length);
 
         if (!rawCycles.length) {
             this.closedContour = null;
@@ -405,16 +424,39 @@ export class LinesManager {
         let bestPoints = null;
         let bestArea = 0;
 
+        const normalizeSegment = (a, b) => {
+            const dx = Math.abs(a.x - b.x);
+            const dy = Math.abs(a.y - b.y);
+
+            if (dx > dy) {
+                // горизонтальная
+                b.y = a.y;
+            } else {
+                // вертикальная
+                b.x = a.x;
+            }
+        };
+
         for (const seq of rawCycles) {
-            // 2. Строим точки только из этого цикла
             let pts = [];
+
             for (const L of seq) {
-                if (!pts.length || pts.at(-1).x !== L.x1 || pts.at(-1).y !== L.y1) pts.push({x:L.x1, y:L.y1});
-                pts.push({x:L.x2, y:L.y2});
+                const a = { x: L.x1, y: L.y1 };
+                const b = { x: L.x2, y: L.y2 };
+
+                normalizeSegment(a, b);
+
+                if (!pts.length || pts.at(-1).x !== a.x || pts.at(-1).y !== a.y) {
+                    pts.push(a);
+                }
+
+                pts.push(b);
             }
 
-            // убираем последовательные дубли
-            pts = pts.filter((p,i,a)=>!i||p.x!==a[i-1].x||p.y!==a[i-1].y);
+            pts = pts.filter((p, i, a) =>
+                !i || p.x !== a[i - 1].x || p.y !== a[i - 1].y
+            );
+
             if (pts.length < 4) continue;
 
             // проверка ортогональности
@@ -422,7 +464,10 @@ export class LinesManager {
             for (let i = 0; i < pts.length; i++) {
                 const a = pts[i];
                 const b = pts[(i + 1) % pts.length];
-                if (a.x !== b.x && a.y !== b.y) { ortho = false; break; }
+                if (a.x !== b.x && a.y !== b.y) {
+                    ortho = false;
+                    break;
+                }
             }
             if (!ortho) continue;
 
@@ -437,119 +482,53 @@ export class LinesManager {
 
         if (!bestPoints) {
             this.closedContour = null;
-            console.log("КОНТУР НЕ ОБРАЗОВАН — фильтры не пропустили циклы");
             return null;
         }
 
-        // -----------------------------
-        // 3. Если последняя точка совпадает с первой — временно убираем для корректной фильтрации
-        // -----------------------------
+        // удаляем повтор последней точки
         const first = bestPoints[0];
-        const last  = bestPoints[bestPoints.length - 1];
-        let removedLast = false;
-        if(first.x === last.x && first.y === last.y){
+        const last = bestPoints.at(-1);
+        if (first.x === last.x && first.y === last.y) {
             bestPoints.pop();
-            removedLast = true;
         }
 
-        // -----------------------------
-        // 4. Рекурсивное удаление точек с degree < 2
-        // -----------------------------
-        const removeLowDegreePoints = (pts) => {
-            if (pts.length < 3) return pts;
-
-            let degreeChanged = true;
-
-            while(degreeChanged) {
-                degreeChanged = false;
-
-                const degree = {};
-                for(let i=0;i<pts.length;i++){
-                    const a = pts[i];
-                    const b = pts[(i+1)%pts.length];
-                    const ka = `${a.x},${a.y}`;
-                    const kb = `${b.x},${b.y}`;
-                    degree[ka] = (degree[ka]||0)+1;
-                    degree[kb] = (degree[kb]||0)+1;
-                }
-
-                const newPts = pts.filter(p => degree[`${p.x},${p.y}`] >= 2);
-
-                if(newPts.length !== pts.length){
-                    degreeChanged = true;
-                    pts = newPts;
-                }
-            }
-
-            return pts;
-        };
-
-        bestPoints = removeLowDegreePoints(bestPoints);
-
-        if(bestPoints.length < 4){
-            console.warn("Контур стал слишком маленьким после удаления точек с degree<2");
-            this.closedContour = null;
-            return null;
-        }
-
-        // -----------------------------
-        // 5. Убираем коллинеарные точки внутри цикла
-        // -----------------------------
+        // убираем коллинеарные
         const removeCollinear = (pts) => {
-            if(!pts || pts.length<3) return pts;
-            const out = [];
-            for(let i=0;i<pts.length;i++){
-                const prev = pts[(i-1+pts.length)%pts.length];
-                const cur  = pts[i];
-                const next = pts[(i+1)%pts.length];
+            if (!pts || pts.length < 3) return pts;
 
-                const collinear = (prev.x===cur.x && cur.x===next.x) || (prev.y===cur.y && cur.y===next.y);
-                if(!collinear) out.push(cur);
+            const out = [];
+            for (let i = 0; i < pts.length; i++) {
+                const prev = pts[(i - 1 + pts.length) % pts.length];
+                const cur  = pts[i];
+                const next = pts[(i + 1) % pts.length];
+
+                const collinear =
+                    (prev.x === cur.x && cur.x === next.x) ||
+                    (prev.y === cur.y && cur.y === next.y);
+
+                if (!collinear) out.push(cur);
             }
+
             return out;
         };
 
         bestPoints = removeCollinear(bestPoints);
 
-        if(bestPoints.length < 4){
-            console.warn("Контур стал слишком маленьким после удаления коллинеарных точек");
+        if (bestPoints.length < 4) {
             this.closedContour = null;
             return null;
         }
 
-        // -----------------------------
-        // 6. Восстанавливаем последнюю точку для замыкания контура
-        // -----------------------------
-        if(removedLast){
-            bestPoints.push({...bestPoints[0]});
-        }
+        // замыкаем
+        bestPoints.push({ ...bestPoints[0] });
 
-        // -----------------------------
-        // 7. Строим линии только для чистого контура
-        // -----------------------------
-        const newLines = [];
-        for(let i=0;i<bestPoints.length-1;i++){
-            const a = bestPoints[i];
-            const b = bestPoints[i+1];
-            newLines.push({
-                x1:a.x, y1:a.y,
-                x2:b.x, y2:b.y,
-                _id:this._nextLineId++
-            });
-        }
-
-        // this.lines = newLines;
         this.closedContour = bestPoints;
-        // this.currentLine = null;
-        // this.lastPoint = null;
 
-        console.log("КОНТУР ЧИСТЫЙ! Вершины:", bestPoints);
-        console.log("Линий в контуре:", newLines.length);
+        console.log("Контур найден:", bestPoints);
 
-        // -----------------------------
-        // 8. Перерисовка
-        // -----------------------------
-        if(window.floorEditor?.draw) window.floorEditor.draw();
+        if (window.floorEditor?.draw) {
+            window.floorEditor.draw();
+        }
 
         return this.closedContour;
     }
@@ -664,7 +643,25 @@ export class LinesManager {
 
         return Math.sqrt(dx * dx + dy * dy);
     }
+    // нормализуем отрезок: snap -> делаем строго горизонтальным или вертикальным
+    normalizeSegment(x1, y1, x2, y2) {
+        // привязка к сетке
+        const s1 = this.snapToGrid(x1, y1);
+        const s2 = this.snapToGrid(x2, y2);
 
+        let nx1 = s1.x, ny1 = s1.y, nx2 = s2.x, ny2 = s2.y;
+
+        // если разница по X больше чем по Y -> горизонтальная, иначе вертикальная
+        if (Math.abs(nx2 - nx1) > Math.abs(ny2 - ny1)) {
+            // horizontal => оставляем y, корректируем x2
+            ny2 = ny1;
+        } else {
+            // vertical => оставляем x, корректируем y2
+            nx2 = nx1;
+        }
+
+        return { x1: nx1, y1: ny1, x2: nx2, y2: ny2 };
+    }
 
 
 

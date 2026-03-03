@@ -509,15 +509,16 @@ export class FloorPlanEditor {
         if (idx === null || idx === undefined) return;
         if (!lm.closedContour || lm.closedContour.length < 4) return;
 
-        // snapshot для undo
+        // --- snapshot для undo ---
         if (!lm.undoStack) lm.undoStack = [];
         lm.undoStack.push({
             lines: JSON.parse(JSON.stringify(lm.lines)),
             closedContour: JSON.parse(JSON.stringify(lm.closedContour)),
-            lastPoint: lm.lastPoint ? { ...lm.lastPoint } : null
+            lastPoint: lm.lastPoint ? { ...lm.lastPoint } : null,
+            lastPointVertical: lm.lastPointVertical ?? null
         });
 
-        // копия точек
+        // --- копия точек контура ---
         let pts = lm.closedContour.slice();
         const first = pts[0];
         const last  = pts[pts.length - 1];
@@ -526,7 +527,7 @@ export class FloorPlanEditor {
         const a = pts[idx];
         const b = pts[(idx + 1) % pts.length];
 
-        // удаляем только **одну** линию, соответствующую сегменту
+        // --- удаляем только одну линию, соответствующую сегменту ---
         for (let i = lm.lines.length - 1; i >= 0; i--) {
             const L = lm.lines[i];
             if ((L.x1 === a.x && L.y1 === a.y && L.x2 === b.x && L.y2 === b.y) ||
@@ -536,19 +537,21 @@ export class FloorPlanEditor {
             }
         }
 
-        // размыкаем контур
+        // --- размыкаем контур ---
         lm.closedContour = null;
         lm.selectedSegmentIndex = null;
         lm.currentLine = null;
 
-        // lastPoint — ближайшая свободная вершина
+        // --- пересчёт lastPoint для продолжения рисования ---
         if (lm.lines.length) {
+            // собираем все концы линий
             const endpoints = [];
             for (const L of lm.lines) {
                 endpoints.push({ x: L.x1, y: L.y1 });
                 endpoints.push({ x: L.x2, y: L.y2 });
             }
 
+            // считаем количество соединений каждой точки
             const degree = {};
             for (const L of lm.lines) {
                 const k1 = `${L.x1},${L.y1}`, k2 = `${L.x2},${L.y2}`;
@@ -556,9 +559,11 @@ export class FloorPlanEditor {
                 degree[k2] = (degree[k2] || 0) + 1;
             }
 
+            // фильтруем свободные концы
             const freePoints = endpoints.filter(p => degree[`${p.x},${p.y}`] === 1);
 
             if (freePoints.length) {
+                // выбираем ближайший к удалённой линии
                 const removedMidpoint = { x: (a.x + b.x)/2, y: (a.y + b.y)/2 };
                 let closest = freePoints[0];
                 let minDist = Math.hypot(freePoints[0].x - removedMidpoint.x, freePoints[0].y - removedMidpoint.y);
@@ -570,19 +575,32 @@ export class FloorPlanEditor {
                         closest = p;
                     }
                 }
+
                 lm.lastPoint = { ...closest };
+
+                // определяем ориентацию линии (вертикальная/горизонтальная)
+                const connectedLine = lm.lines.find(L =>
+                    (L.x1 === closest.x && L.y1 === closest.y) || (L.x2 === closest.x && L.y2 === closest.y)
+                );
+                if (connectedLine) {
+                    lm.lastPointVertical = connectedLine.x1 === connectedLine.x2;
+                } else {
+                    lm.lastPointVertical = null;
+                }
+
             } else {
                 lm.lastPoint = null;
+                lm.lastPointVertical = null;
             }
+
         } else {
             lm.lastPoint = null;
+            lm.lastPointVertical = null;
         }
 
         this.contourLocked = false;
         this.draw();
     }
-
-
 
 
 
