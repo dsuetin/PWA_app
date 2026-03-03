@@ -97,57 +97,106 @@ export class LightsDrawer {
     // -----------------------
 
     tryAddLight(clientX, clientY) {
-        if (!this.enabled || !this.editor) return;
+    if (!this.enabled || !this.editor) return;
+    if (this.editor.isPinching || this.editor.isPanning) return;
 
-        // ❌ если навигация
-        if (this.editor.isPinching || this.editor.isPanning) return;
+    const world = this.editor.screenToWorld(clientX, clientY);
+    const lm = this.editor.linesManager;
+    const contour = lm.closedContour;
 
-        const world = this.editor.screenToWorld(clientX, clientY);
-
-        if (!this.editor.linesManager.closedContour) {
-            alert("Сначала замкните контур помещения");
-            return;
-        }
-
-        if (!this.editor.linesManager.isPointInside(world.x, world.y)) {
-            alert("Светильник можно ставить только внутри контура");
-            return;
-        }
-
-        const input = prompt(
-            "Введите через запятую расстояние до ближайшей вертикальной и горизонтальной стены (см)\n" +
-            "Пример: 10,15\n" +
-            "Пусто — привязка к сетке"
-        );
-
-        if (input === null) return;
-
-        let [dxStr, dyStr] = input.split(",").map(s => s.trim());
-        const dx = dxStr || "";
-        const dy = dyStr || "";
-
-        let posX = world.x;
-        let posY = world.y;
-
-        if (dx === "" && dy === "") {
-            const snap = this.editor.snapToGrid(world.x, world.y);
-            posX = snap.x;
-            posY = snap.y;
-        } else {
-            const walls = this.editor.linesManager.getNearestWalls(world.x, world.y);
-
-            if (dx !== "" && walls.v !== null) {
-                posX = walls.v + Math.sign(world.x - walls.v) * parseFloat(dx);
-            }
-
-            if (dy !== "" && walls.h !== null) {
-                posY = walls.h + Math.sign(world.y - walls.h) * parseFloat(dy);
-            }
-        }
-
-        this.lights.push({ x1: posX, y1: posY });
-        this.editor.draw();
+    if (!contour) {
+        alert("Сначала замкните контур помещения");
+        return;
     }
+
+    if (!lm.isPointInside(world.x, world.y)) {
+        alert("Светильник можно ставить только внутри контура");
+        return;
+    }
+
+    const input = prompt(
+        "Введите расстояние до вертикальной и горизонтальной стены\nПример: 60,40"
+    );
+    if (input === null) return;
+
+    let [dxStr = "", dyStr = ""] = input.split(",").map(s => s.trim());
+
+    const dx = dxStr ? parseFloat(dxStr) : null;
+    const dy = dyStr ? parseFloat(dyStr) : null;
+
+    let posX = world.x;
+    let posY = world.y;
+
+    // собираем сегменты контура
+    const segs = [];
+    for (let i = 0; i < contour.length - 1; i++) {
+        const a = contour[i];
+        const b = contour[i + 1];
+        segs.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+    }
+
+    let bestVertical = null;
+    let bestVerticalDist = Infinity;
+
+    let bestHorizontal = null;
+    let bestHorizontalDist = Infinity;
+
+    for (const s of segs) {
+        // вертикальная стена
+        if (s.x1 === s.x2) {
+            const wallX = s.x1;
+
+            const minY = Math.min(s.y1, s.y2);
+            const maxY = Math.max(s.y1, s.y2);
+
+            // перпендикуляр должен попадать в сегмент
+            if (world.y >= minY && world.y <= maxY) {
+                const dist = Math.abs(world.x - wallX);
+
+                if (dist < bestVerticalDist) {
+                    bestVerticalDist = dist;
+                    bestVertical = s;
+                }
+            }
+        }
+
+        // горизонтальная стена
+        if (s.y1 === s.y2) {
+            const wallY = s.y1;
+
+            const minX = Math.min(s.x1, s.x2);
+            const maxX = Math.max(s.x1, s.x2);
+
+            if (world.x >= minX && world.x <= maxX) {
+                const dist = Math.abs(world.y - wallY);
+
+                if (dist < bestHorizontalDist) {
+                    bestHorizontalDist = dist;
+                    bestHorizontal = s;
+                }
+            }
+        }
+    }
+
+    // вычисляем позицию
+    if (dx !== null && bestVertical) {
+        const wallX = bestVertical.x1;
+        posX = wallX + Math.sign(world.x - wallX) * dx;
+    }
+
+    if (dy !== null && bestHorizontal) {
+        const wallY = bestHorizontal.y1;
+        posY = wallY + Math.sign(world.y - wallY) * dy;
+    }
+
+    // snap к сетке всегда
+    const snap = this.editor.snapToGrid(posX, posY);
+    posX = snap.x;
+    posY = snap.y;
+
+    this.lights.push({ x1: posX, y1: posY });
+    this.editor.draw();
+}
 
     undo() {
         if (this.lights.length) {
