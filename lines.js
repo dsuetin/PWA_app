@@ -8,6 +8,7 @@ export class LinesManager {
         this.lastPoint = null;
         this.closedContour = null;
         this.selectedSegmentIndex = null;
+        this.EPS = 1.1;
 
     }
 
@@ -55,9 +56,25 @@ export class LinesManager {
     // ---------- drawing ----------
     startLine(start) {
         if (!this.isStartAllowed(start.x, start.y)) return;
+
+        // определяем ориентацию линии по свободному концу (горизонтальная/вертикальная)
+        let vertical = null;
+
+        if (this.lines.length) {
+            // ищем все линии, соединённые с этой точкой
+            for (const L of this.lines) {
+                if ((L.x1 === start.x && L.y1 === start.y) || (L.x2 === start.x && L.y2 === start.y)) {
+                    vertical = L.x1 === L.x2;
+                    break;
+                }
+            }
+        }
+
+        // если не нашли — по умолчанию вертикальная
+        if (vertical === null) vertical = true;
+
         this.currentLine = { x1: start.x, y1: start.y, x2: start.x, y2: start.y };
-        // используем lastPointVertical для ориентации линии
-        this.currentLineVertical = this.lastPointVertical ?? null;
+        this.currentLineVertical = vertical;
     }
 
     applyLineConstraints(x1, y1, x2, y2) {
@@ -70,14 +87,14 @@ export class LinesManager {
             // пересечение вертикальной с горизонтальной
             if (vertical && !Lvert) {
                 const vx = x1, hy = L.y1;
-                if (vx >= Math.min(L.x1, L.x2) && vx <= Math.max(L.x1, L.x2) &&
+                if (vx >= Math.min(L.x1, L.x2) - this.EPS && vx <= Math.max(L.x1, L.x2) + this.EPS &&
                     ((y2 > y1 && hy > y1 && hy <= y2) || (y2 < y1 && hy < y1 && hy >= y2))) {
                     if (best === null || Math.abs(hy - y1) < Math.abs(best - y1)) best = hy;
                 }
             }
             if (!vertical && Lvert) {
                 const vy = y1, hx = L.x1;
-                if (vy >= Math.min(L.y1, L.y2) && vy <= Math.max(L.y1, L.y2) &&
+                if (vy >= Math.min(L.y1, L.y2) - this.EPS && vy <= Math.max(L.y1, L.y2) + this.EPS &&
                     ((x2 > x1 && hx > x1 && hx <= x2) || (x2 < x1 && hx < x1 && hx >= x2))) {
                     if (best === null || Math.abs(hx - x1) < Math.abs(best - x1)) best = hx;
                 }
@@ -146,9 +163,25 @@ export class LinesManager {
         // -----------------------------
         // 1️⃣ Определяем направление линии относительно свободного конца
         // -----------------------------
-        const dx = Math.abs(x - x1);
-        const dy = Math.abs(y - y1);
-        let vertical = dy > dx;
+        let vertical;
+
+        // если есть предыдущая точка — берём направление линии в ней
+        if (this.lastPoint) {
+            const dir = this.getDirectionAtPoint(this.lastPoint.x, this.lastPoint.y);
+
+            if (dir === "horizontal") vertical = true;
+            else if (dir === "vertical") vertical = false;
+            else {
+                // fallback (первая линия или изолированная точка)
+                const dx = Math.abs(x - x1);
+                const dy = Math.abs(y - y1);
+                vertical = dy > dx;
+            }
+        } else {
+            const dx = Math.abs(x - x1);
+            const dy = Math.abs(y - y1);
+            vertical = dy > dx;
+        }
 
         // -----------------------------
         // 2️⃣ Фиксируем координату перпендикулярно
@@ -293,25 +326,37 @@ export class LinesManager {
     }
 
 
-    // ---------- GRAPH + CYCLES ----------
+        // ---------- GRAPH + CYCLES ----------
     _buildGraphWithIntersections() {
-        const pointsOnLine = this.lines.map(() => new Set());
-        const addPointToLine = (i, px, py) => pointsOnLine[i].add(this._pointKey(px, py));
+        console.log("=== BUILD GRAPH START ===");
 
+        const pointsOnLine = this.lines.map(() => new Set());
+        const addPointToLine = (i, px, py) => {
+            pointsOnLine[i].add(this._pointKey(px, py));
+            console.log(`Line ${i} add point: (${px}, ${py})`);
+        };
+
+        // добавляем концы линий
         this.lines.forEach((L, i) => {
             addPointToLine(i, L.x1, L.y1);
             addPointToLine(i, L.x2, L.y2);
         });
 
+        // ищем пересечения вертикальных и горизонтальных линий
         for (let i = 0; i < this.lines.length; i++) {
             const A = this.lines[i], Avert = A.x1 === A.x2;
             for (let j = i + 1; j < this.lines.length; j++) {
                 const B = this.lines[j], Bvert = B.x1 === B.x2;
-                if (Avert === Bvert) continue;
-                let vert = Avert ? A : B, hor = Avert ? B : A;
+                if (Avert === Bvert) continue; // параллельные пропускаем
+
+                let vert = Avert ? A : B;
+                let hor  = Avert ? B : A;
+
                 const vx = vert.x1, vyMin = Math.min(vert.y1, vert.y2), vyMax = Math.max(vert.y1, vert.y2);
                 const hy = hor.y1, hxMin = Math.min(hor.x1, hor.x2), hxMax = Math.max(hor.x1, hor.x2);
+
                 if (hxMin <= vx && vx <= hxMax && vyMin <= hy && hy <= vyMax) {
+                    console.log(`Intersection found between line ${i} and line ${j}: (${vx}, ${hy})`);
                     addPointToLine(Avert ? i : j, vx, hy);
                     addPointToLine(Avert ? j : i, vx, hy);
                 }
@@ -323,44 +368,73 @@ export class LinesManager {
 
         for (let i = 0; i < this.lines.length; i++) {
             const L = this.lines[i];
-            const keys = Array.from(pointsOnLine[i]).map(k => {
+            let keys = Array.from(pointsOnLine[i]).map(k => {
                 const [px, py] = k.split(",").map(Number);
                 return { key: k, x: px, y: py };
             });
-            if (L.x1 === L.x2) keys.sort((a, b) => a.y - b.y);
-            else keys.sort((a, b) => a.x - b.x);
+            if (L.x1 === L.x2) keys.sort((a,b) => a.y - b.y);
+            else keys.sort((a,b) => a.x - b.x);
 
-            for (let p = 0; p < keys.length; p++) ensureKey(keys[p].key);
-            for (let p = 0; p < keys.length - 1; p++) {
-                const a = keys[p].key, b = keys[p + 1].key;
+            // удаляем последовательные дубли
+            const filteredKeys = [];
+            for (let k = 0; k < keys.length; k++) {
+                const last = filteredKeys.at(-1);
+                if (!last || last.x !== keys[k].x || last.y !== keys[k].y) filteredKeys.push(keys[k]);
+            }
+
+            // создаем вершины и ребра только из filteredKeys
+            filteredKeys.forEach(k => ensureKey(k.key));
+            for (let k = 0; k < filteredKeys.length - 1; k++) {
+                const a = filteredKeys[k].key, b = filteredKeys[k+1].key;
                 graph.get(a).push({ to: b, lineId: L._id });
                 graph.get(b).push({ to: a, lineId: L._id });
             }
         }
 
+        console.log("=== BUILD GRAPH END ===");
+        console.log("Final graph:", graph);
         return graph;
     }
 
     _findCyclesInGraph(graph) {
+
+        console.log("=== FIND CYCLES START ===");
+        console.log("Graph keys (vertices):", Array.from(graph.keys()));
+
+        for (const [key, edges] of graph.entries()) {
+            console.log(`Vertex ${key} has edges:`, edges.map(e => `${e.to} (line ${e.lineId})`));
+        }
         const cycles = [];
         const keys = Array.from(graph.keys());
+
         const dfs = (startKey, currentKey, usedLineIds, pathKeys) => {
             for (const edge of graph.get(currentKey) || []) {
-                const nextKey = edge.to, lineId = edge.lineId;
-                if (usedLineIds.has(lineId)) continue;
+                const nextKey = edge.to;
+                const lineId = edge.lineId;
+
+                if (usedLineIds.has(lineId)) continue; // отрезок уже использован
+
+                // предотвращаем добавление одинаковой точки подряд
+                if (nextKey === pathKeys.at(-1)) continue;
+
                 if (nextKey === startKey && pathKeys.length >= 2) {
                     const orderedLineIds = [...pathKeys._edgeOrder || [], lineId];
                     if ((new Set(orderedLineIds)).size === orderedLineIds.length && orderedLineIds.length >= 4) {
                         const linesSeq = orderedLineIds.map(id => this.lines.find(L => L._id === id));
-                        cycles.push(linesSeq);
+                        // фильтруем нулевые сегменты
+                        const nonZero = linesSeq.filter(L => L.x1!==L.x2 || L.y1!==L.y2);
+                        if (nonZero.length >= 4) cycles.push(nonZero);
                     }
                     continue;
                 }
+
                 usedLineIds.add(lineId);
                 if (!pathKeys._edgeOrder) pathKeys._edgeOrder = [];
                 pathKeys._edgeOrder.push(lineId);
                 pathKeys.push(nextKey);
+
                 dfs(startKey, nextKey, usedLineIds, pathKeys);
+
                 pathKeys.pop();
                 pathKeys._edgeOrder.pop();
                 if (pathKeys._edgeOrder.length === 0) delete pathKeys._edgeOrder;
@@ -388,10 +462,16 @@ export class LinesManager {
             pts.push({ x: cx, y: cy });
         }
 
+        // Убираем последовательные дубли (нулевые сегменты)
         const simple = [];
-        for (const p of pts) { const last = simple.at(-1); if (!last || last.x !== p.x || last.y !== p.y) simple.push(p); }
+        for (const p of pts) {
+            const last = simple.at(-1);
+            if (!last || last.x !== p.x || last.y !== p.y) simple.push(p);
+        }
+
         return simple;
     }
+
 
     _computeAreaFromPoints(points) {
         if (!points || points.length < 3) return 0;
@@ -403,136 +483,181 @@ export class LinesManager {
         return Math.abs(area / 2);
     }
 
-
+    getDirectionAtPoint(x, y) {
+        for (const L of this.lines) {
+            // точка совпадает с началом или концом линии
+            if (
+                (L.x1 === x && L.y1 === y) ||
+                (L.x2 === x && L.y2 === y)
+            ) {
+                return (L.x1 === L.x2) ? "vertical" : "horizontal";
+            }
+        }
+        return null;
+    }
 
     detectClosedContour() {
         if (!this.lines.length) {
             this.closedContour = null;
-            console.log("КОНТУР НЕ ОБРАЗОВАН — нет линий");
+            console.log("[detectClosedContour] КОНТУР НЕ ОБРАЗОВАН — нет линий");
             return null;
         }
 
+        console.log("[detectClosedContour] Строим граф с пересечениями...");
         const graph = this._buildGraphWithIntersections();
+
+        console.log("[detectClosedContour] Находим циклы в графе...");
         const rawCycles = this._findCyclesInGraph(graph);
 
         if (!rawCycles.length) {
             this.closedContour = null;
-            console.log("КОНТУР НЕ ОБРАЗОВАН — циклов нет");
+            console.log("[detectClosedContour] КОНТУР НЕ ОБРАЗОВАН — циклов нет");
             return null;
         }
+
+        console.log(`[detectClosedContour] Найдено циклов: ${rawCycles.length}`);
+
+        // Логируем все циклы
+        console.log("[detectClosedContour] Все найденные циклы:");
+        rawCycles.forEach((cycle, idx) => {
+            const pointsStr = cycle.map(L => {
+                // L — объект линии {x1, y1, x2, y2}
+                if (L && typeof L === 'object' && 'x1' in L && 'y1' in L) {
+                    return `(${L.x1},${L.y1})`;
+                } else {
+                    return "(unknown)";
+                }
+            }).join(" -> ");
+            console.log(`[Cycle ${idx}] ${pointsStr}`);
+        });
 
         let bestPoints = null;
         let bestArea = 0;
 
-        const normalizeSegment = (a, b) => {
-            const dx = Math.abs(a.x - b.x);
-            const dy = Math.abs(a.y - b.y);
-
-            if (dx > dy) {
-                // горизонтальная
-                b.y = a.y;
+        const normSeg = (ax, ay, bx, by) => {
+            if (typeof this.normalizeSegment === "function") {
+                return this.normalizeSegment(ax, ay, bx, by);
             } else {
-                // вертикальная
-                b.x = a.x;
+                const dx = Math.abs(bx - ax);
+                const dy = Math.abs(by - ay);
+                if (dx > dy) return { x1: ax, y1: ay, x2: bx, y2: ay };
+                return { x1: ax, y1: ay, x2: ax, y2: by };
             }
         };
 
-        for (const seq of rawCycles) {
+        for (const [idx, seq] of rawCycles.entries()) {
             let pts = [];
 
             for (const L of seq) {
                 const a = { x: L.x1, y: L.y1 };
                 const b = { x: L.x2, y: L.y2 };
 
-                normalizeSegment(a, b);
+                const normalized = normSeg(a.x, a.y, b.x, b.y);
+                const na = { x: normalized.x1, y: normalized.y1 };
+                const nb = { x: normalized.x2, y: normalized.y2 };
 
-                if (!pts.length || pts.at(-1).x !== a.x || pts.at(-1).y !== a.y) {
-                    pts.push(a);
+                if (!pts.length || pts.at(-1).x !== na.x || pts.at(-1).y !== na.y) {
+                    pts.push(na);
                 }
-
-                pts.push(b);
+                pts.push(nb);
             }
 
-            pts = pts.filter((p, i, a) =>
-                !i || p.x !== a[i - 1].x || p.y !== a[i - 1].y
-            );
+            pts = pts.filter((p, i, a) => !i || p.x !== a[i - 1].x || p.y !== a[i - 1].y);
 
-            if (pts.length < 4) continue;
+            if (pts.length < 4) {
+                console.log(`[detectClosedContour][Cycle ${idx}] Пропускаем — точек < 4`);
+                continue;
+            }
 
-            // проверка ортогональности
             let ortho = true;
+            const EPS = 1e-2;
             for (let i = 0; i < pts.length; i++) {
                 const a = pts[i];
                 const b = pts[(i + 1) % pts.length];
-                if (a.x !== b.x && a.y !== b.y) {
-                    ortho = false;
-                    break;
-                }
+                if (a.x===b.x && a.y===b.y) continue; // пропускаем нулевой сегмент
+                if (Math.abs(a.x - b.x) > EPS && Math.abs(a.y - b.y) > EPS) { ortho = false; break; }
             }
-            if (!ortho) continue;
+            if (!ortho) {
+                console.log(`[detectClosedContour][Cycle ${idx}] Пропускаем — не ортогональный`);
+                continue;
+            }
 
             const area = this._computeAreaFromPoints(pts);
-            if (area <= 1e-6) continue;
+            if (area <= 1e-6) {
+                console.log(`[detectClosedContour][Cycle ${idx}] Пропускаем — площадь ≈ 0`);
+                continue;
+            }
 
             if (area > bestArea) {
                 bestArea = area;
                 bestPoints = pts;
+                console.log(`[detectClosedContour][Cycle ${idx}] Новый лучший контур, площадь = ${bestArea}`);
             }
         }
 
         if (!bestPoints) {
             this.closedContour = null;
+            console.log("[detectClosedContour] КОНТУР НЕ ОБРАЗОВАН — фильтры не пропустили циклы");
             return null;
         }
 
-        // удаляем повтор последней точки
         const first = bestPoints[0];
-        const last = bestPoints.at(-1);
-        if (first.x === last.x && first.y === last.y) {
-            bestPoints.pop();
-        }
+        const last = bestPoints[bestPoints.length - 1];
+        if (first.x === last.x && first.y === last.y) bestPoints.pop();
 
-        // убираем коллинеарные
         const removeCollinear = (pts) => {
             if (!pts || pts.length < 3) return pts;
-
             const out = [];
             for (let i = 0; i < pts.length; i++) {
                 const prev = pts[(i - 1 + pts.length) % pts.length];
-                const cur  = pts[i];
+                const cur = pts[i];
                 const next = pts[(i + 1) % pts.length];
-
-                const collinear =
-                    (prev.x === cur.x && cur.x === next.x) ||
-                    (prev.y === cur.y && cur.y === next.y);
-
+                const collinear = (prev.x === cur.x && cur.x === next.x) || (prev.y === cur.y && cur.y === next.y);
                 if (!collinear) out.push(cur);
             }
-
             return out;
         };
 
-        bestPoints = removeCollinear(bestPoints);
+        let cleaned = removeCollinear(bestPoints);
+        console.log("[detectClosedContour] Точки после удаления коллинеарных:", cleaned);
 
-        if (bestPoints.length < 4) {
+        if (cleaned.length < 4) {
             this.closedContour = null;
+            console.log("[detectClosedContour] КОНТУР НЕ ОБРАЗОВАН — после очистки точек стало <4");
             return null;
         }
 
-        // замыкаем
-        bestPoints.push({ ...bestPoints[0] });
+        cleaned.push({ ...cleaned[0] });
 
-        this.closedContour = bestPoints;
+        const newLines = [];
+        for (let i = 0; i < cleaned.length - 1; i++) {
+            const a = cleaned[i];
+            const b = cleaned[i + 1];
+            const seg = (typeof this.normalizeSegment === "function")
+                ? this.normalizeSegment(a.x, a.y, b.x, b.y)
+                : { x1: a.x, y1: a.y, x2: b.x, y2: b.y };
 
-        console.log("Контур найден:", bestPoints);
-
-        if (window.floorEditor?.draw) {
-            window.floorEditor.draw();
+            newLines.push({
+                x1: seg.x1,
+                y1: seg.y1,
+                x2: seg.x2,
+                y2: seg.y2,
+                _id: this._nextLineId++
+            });
         }
+
+        this.lines = newLines;
+        this.closedContour = cleaned;
+        this.currentLine = null;
+        this.selectedSegmentIndex = null;
+        this.lastPoint = null;
+
+        console.log("[detectClosedContour] Контур найден и линии пересобраны:", this.closedContour);
+
+        if (window.floorEditor?.draw) window.floorEditor.draw();
 
         return this.closedContour;
     }
-
 
 
     // ---------- IO ----------
@@ -663,6 +788,69 @@ export class LinesManager {
         return { x1: nx1, y1: ny1, x2: nx2, y2: ny2 };
     }
 
+resizeSegment(index, newLengthCm) {
+    if (!this.closedContour) return;
+
+    const pts = this.closedContour.slice();
+    if (pts.length < 4) return;
+
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    const closed = first.x === last.x && first.y === last.y;
+
+    if (closed) pts.pop();
+
+    const a = pts[index];
+    const b = pts[(index + 1) % pts.length];
+
+    const horizontal = a.y === b.y;
+    const vertical = a.x === b.x;
+
+    if (!horizontal && !vertical) return;
+
+    const len = newLengthCm;
+
+    if (horizontal) {
+        const dir = Math.sign(b.x - a.x) || 1;
+        pts[(index + 1) % pts.length] = {
+            x: a.x + dir * len,
+            y: a.y
+        };
+    }
+
+    if (vertical) {
+        const dir = Math.sign(b.y - a.y) || 1;
+        pts[(index + 1) % pts.length] = {
+            x: a.x,
+            y: a.y + dir * len
+        };
+    }
+
+    if (closed) pts.push({ ...pts[0] });
+
+    this.closedContour = pts;
+
+    // пересобираем lines
+    this.lines = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+        const seg = this.normalizeSegment(
+            pts[i].x,
+            pts[i].y,
+            pts[i + 1].x,
+            pts[i + 1].y
+        );
+
+        this.lines.push({
+            x1: seg.x1,
+            y1: seg.y1,
+            x2: seg.x2,
+            y2: seg.y2,
+            _id: this._nextLineId++
+        });
+    }
+
+    if (window.floorEditor) window.floorEditor.draw();
+}
 
 
 }

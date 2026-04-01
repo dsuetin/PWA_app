@@ -156,7 +156,15 @@ export class FloorPlanEditor {
             const world = this.screenToWorld(e.clientX, e.clientY);
             const idx = this.linesManager.getSegmentAt(world.x, world.y);
             if (idx !== null) {
-                this.linesManager.selectedSegmentIndex = idx;
+                if (this.linesManager.selectedSegmentIndex === idx) {
+                    const newLen = prompt("Новая длина сегмента (см)");
+                    if (newLen) {
+                        this.linesManager.resizeSegment(idx, parseFloat(newLen));
+                    }
+
+                } else {
+                    this.linesManager.selectedSegmentIndex = idx;
+                }
                 this.draw();
                 return;
             } else {
