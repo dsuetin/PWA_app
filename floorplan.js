@@ -51,6 +51,7 @@ export class FloorPlanEditor {
         this.canvas.addEventListener("touchstart", e => this.onTouchStart(e), { passive: false });
         this.canvas.addEventListener("touchmove", e => this.onTouchMove(e), { passive: false });
         this.canvas.addEventListener("touchend", e => this.onTouchEnd(e));
+        this.canvas.addEventListener("dblclick", (e) => this.onDoubleClick(e));
 
         window.addEventListener("keydown", e => {
             if (e.code === "Space") this.spacePressed = true;
@@ -150,21 +151,28 @@ export class FloorPlanEditor {
         return this.linesManager.snapToGrid(x, y);
     }
 
+    onDoubleClick(e) {
+        if (!this.linesManager.closedContour) return;
+
+        const world = this.screenToWorld(e.clientX, e.clientY);
+        const idx = this.linesManager.getSegmentAt(world.x, world.y);
+
+        if (idx === -1 || idx === null) return;
+
+        const newLen = prompt("Новая длина сегмента (см)");
+        if (!newLen) return;
+
+        this.linesManager.resizeSegment(idx, parseFloat(newLen));
+        this.draw();
+    }
+    
     onPointerDown(e) {
 
         if (this.linesManager.closedContour) {
             const world = this.screenToWorld(e.clientX, e.clientY);
             const idx = this.linesManager.getSegmentAt(world.x, world.y);
             if (idx !== null) {
-                if (this.linesManager.selectedSegmentIndex === idx) {
-                    const newLen = prompt("Новая длина сегмента (см)");
-                    if (newLen) {
-                        this.linesManager.resizeSegment(idx, parseFloat(newLen));
-                    }
-
-                } else {
-                    this.linesManager.selectedSegmentIndex = idx;
-                }
+                this.linesManager.selectedSegmentIndex = idx;
                 this.draw();
                 return;
             } else {
