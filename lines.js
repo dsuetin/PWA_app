@@ -401,9 +401,9 @@ export class LinesManager {
         console.log("=== FIND CYCLES START ===");
         console.log("Graph keys (vertices):", Array.from(graph.keys()));
 
-        for (const [key, edges] of graph.entries()) {
-            console.log(`Vertex ${key} has edges:`, edges.map(e => `${e.to} (line ${e.lineId})`));
-        }
+        // for (const [key, edges] of graph.entries()) {
+        //     console.log(`Vertex ${key} has edges:`, edges.map(e => `${e.to} (line ${e.lineId})`));
+        // }
         const cycles = [];
         const keys = Array.from(graph.keys());
 
@@ -417,15 +417,45 @@ export class LinesManager {
                 // предотвращаем добавление одинаковой точки подряд
                 if (nextKey === pathKeys.at(-1)) continue;
 
-                if (nextKey === startKey && pathKeys.length >= 2) {
+                if (nextKey === startKey && pathKeys.length >= 3) {
                     const orderedLineIds = [...pathKeys._edgeOrder || [], lineId];
-                    if ((new Set(orderedLineIds)).size === orderedLineIds.length && orderedLineIds.length >= 4) {
-                        const linesSeq = orderedLineIds.map(id => this.lines.find(L => L._id === id));
-                        // фильтруем нулевые сегменты
-                        const nonZero = linesSeq.filter(L => L.x1!==L.x2 || L.y1!==L.y2);
-                        if (nonZero.length >= 4) cycles.push(nonZero);
+                    const cyclePoints = [...pathKeys, startKey];
+                    const segments = [];
+
+                    for (let i = 0; i < cyclePoints.length - 1; i++) {
+                        const [x1, y1] = cyclePoints[i].split(',').map(Number);
+                        const [x2, y2] = cyclePoints[i + 1].split(',').map(Number);
+
+                        segments.push({
+                            x1, y1, x2, y2
+                        });
                     }
+
+                    console.log("DFS CYCLE FOUND (CLEAN):");
+                    console.log("  points:", cyclePoints.join(" -> "));
+                    console.log("  segments:", segments.map(s => `(${s.x1},${s.y1})->(${s.x2},${s.y2})`).join(" | "));
+
+                    cycles.push(segments);
                     continue;
+                // 🔥 ЛОГ: что нашёл DFS
+                    // console.log("DFS CYCLE FOUND:");
+                    // console.log("  pathKeys:", [...pathKeys, startKey].join(" -> "));
+                    // console.log("  lineIds:", orderedLineIds.join(","));
+                    // if ((new Set(orderedLineIds)).size === orderedLineIds.length && orderedLineIds.length >= 4) {
+                    //     const linesSeq = orderedLineIds.map(id => this.lines.find(L => L._id === id));
+                    //     // 🔥 ЛОГ: что превращается в линии
+                    //     console.log("  linesSeq:", linesSeq.map(L => 
+                    //         L ? `(${L.x1},${L.y1})->(${L.x2},${L.y2})` : "NULL"
+                    //     ).join(" | "));
+                    //                             // фильтруем нулевые сегменты
+                    //     const nonZero = linesSeq.filter(L => L.x1!==L.x2 || L.y1!==L.y2);
+                    //     // 🔥 ЛОГ: после фильтра
+                    //     console.log("  nonZero:", nonZero.map(L => 
+                    //         `(${L.x1},${L.y1})->(${L.x2},${L.y2})`
+                    //     ).join(" | "));
+                    //     if (nonZero.length >= 4) cycles.push(nonZero);
+                    // }
+                    // continue;
                 }
 
                 usedLineIds.add(lineId);
@@ -443,6 +473,13 @@ export class LinesManager {
         };
 
         for (const k of keys) dfs(k, k, new Set(), [k]);
+        console.log("=== RETURN CYCLES ===");
+        cycles.forEach((cycle, i) => {
+            console.log(
+                `[RETURN ${i}]`,
+                cycle.map(L => `(${L.x1},${L.y1})->(${L.x2},${L.y2})`).join(" | ")
+            );
+        });
         return cycles;
     }
 
@@ -546,21 +583,22 @@ export class LinesManager {
         };
 
         for (const [idx, seq] of rawCycles.entries()) {
-            let pts = [];
+            // let pts = [];
 
-            for (const L of seq) {
-                const a = { x: L.x1, y: L.y1 };
-                const b = { x: L.x2, y: L.y2 };
+            // for (const L of seq) {
+            //     const a = { x: L.x1, y: L.y1 };
+            //     const b = { x: L.x2, y: L.y2 };
 
-                const normalized = normSeg(a.x, a.y, b.x, b.y);
-                const na = { x: normalized.x1, y: normalized.y1 };
-                const nb = { x: normalized.x2, y: normalized.y2 };
+            //     const normalized = normSeg(a.x, a.y, b.x, b.y);
+            //     const na = { x: normalized.x1, y: normalized.y1 };
+            //     const nb = { x: normalized.x2, y: normalized.y2 };
 
-                if (!pts.length || pts.at(-1).x !== na.x || pts.at(-1).y !== na.y) {
-                    pts.push(na);
-                }
-                pts.push(nb);
-            }
+            //     if (!pts.length || pts.at(-1).x !== na.x || pts.at(-1).y !== na.y) {
+            //         pts.push(na);
+            //     }
+            //     pts.push(nb);
+            // }
+            let pts = this._linesToPolygonPoints(seq);
 
             pts = pts.filter((p, i, a) => !i || p.x !== a[i - 1].x || p.y !== a[i - 1].y);
 
