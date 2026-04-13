@@ -825,70 +825,169 @@ export class LinesManager {
 
         return { x1: nx1, y1: ny1, x2: nx2, y2: ny2 };
     }
+    syncLinesFromContour() {
+        if (!this.closedContour) return;
 
-resizeSegment(index, newLengthCm) {
-    if (!this.closedContour) return;
+        this.lines = [];
 
-    const pts = this.closedContour.slice();
-    if (pts.length < 4) return;
+        const pts = this.closedContour;
+        const count = pts.length - 1;
 
-    const first = pts[0];
-    const last = pts[pts.length - 1];
-    const closed = first.x === last.x && first.y === last.y;
+        for (let i = 0; i < count; i++) {
+            const a = pts[i];
+            const b = pts[i + 1];
 
-    if (closed) pts.pop();
+            this.lines.push({
+                x1: a.x,
+                y1: a.y,
+                x2: b.x,
+                y2: b.y,
+                _id: i
+            });
+        }
+    }
+    resizeSegment(index, newLengthCm) {
+        if (!this.closedContour) return;
 
-    const a = pts[index];
-    const b = pts[(index + 1) % pts.length];
+        const pts = this.closedContour.slice();
+        if (pts.length < 4) return;
 
-    const horizontal = a.y === b.y;
-    const vertical = a.x === b.x;
+        const first = pts[0];
+        const last = pts[pts.length - 1];
+        const closed = first.x === last.x && first.y === last.y;
 
-    if (!horizontal && !vertical) return;
+        if (closed) pts.pop();
 
-    const len = newLengthCm;
+        const a = pts[index];
+        const b = pts[(index + 1) % pts.length];
 
-    if (horizontal) {
-        const dir = Math.sign(b.x - a.x) || 1;
-        pts[(index + 1) % pts.length] = {
-            x: a.x + dir * len,
-            y: a.y
-        };
+        const horizontal = a.y === b.y;
+        const vertical = a.x === b.x;
+
+        if (!horizontal && !vertical) return;
+
+        const len = newLengthCm;
+
+        if (horizontal) {
+            const dir = Math.sign(b.x - a.x) || 1;
+            pts[(index + 1) % pts.length] = {
+                x: a.x + dir * len,
+                y: a.y
+            };
+        }
+
+        if (vertical) {
+            const dir = Math.sign(b.y - a.y) || 1;
+            pts[(index + 1) % pts.length] = {
+                x: a.x,
+                y: a.y + dir * len
+            };
+        }
+
+        if (closed) pts.push({ ...pts[0] });
+
+        this.closedContour = pts;
+
+        // пересобираем lines
+        this.lines = [];
+        for (let i = 0; i < pts.length - 1; i++) {
+            const seg = this.normalizeSegment(
+                pts[i].x,
+                pts[i].y,
+                pts[i + 1].x,
+                pts[i + 1].y
+            );
+
+            this.lines.push({
+                x1: seg.x1,
+                y1: seg.y1,
+                x2: seg.x2,
+                y2: seg.y2,
+                _id: this._nextLineId++
+            });
+        }
+
+        if (window.floorEditor) window.floorEditor.draw();
     }
 
-    if (vertical) {
-        const dir = Math.sign(b.y - a.y) || 1;
-        pts[(index + 1) % pts.length] = {
-            x: a.x,
-            y: a.y + dir * len
-        };
+    // ---------- VERTEX DRAG ----------
+    getVertexAt(x, y, radius = 15) {
+        if (!this.closedContour) return -1;
+
+        const pts = this.closedContour;
+
+        for (let i = 0; i < pts.length - 1; i++) {
+            const p = pts[i];
+
+            const dx = p.x - x;
+            const dy = p.y - y;
+
+            if (Math.abs(dx) <= radius && Math.abs(dy) <= radius) {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
-    if (closed) pts.push({ ...pts[0] });
+    resizeSegmentByContour(index, newLen) {
+        if (!this.closedContour) return;
 
-    this.closedContour = pts;
+        const pts = this.closedContour.slice();
+        const count = pts.length - 1;
 
-    // пересобираем lines
-    this.lines = [];
-    for (let i = 0; i < pts.length - 1; i++) {
-        const seg = this.normalizeSegment(
-            pts[i].x,
-            pts[i].y,
-            pts[i + 1].x,
-            pts[i + 1].y
-        );
+        const i1 = index;
+        const i2 = (index + 1) % count;
 
-        this.lines.push({
-            x1: seg.x1,
-            y1: seg.y1,
-            x2: seg.x2,
-            y2: seg.y2,
-            _id: this._nextLineId++
-        });
+        const p1 = pts[i1];
+        const p2 = pts[i2];
+
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+
+        const len = Math.hypot(dx, dy);
+        if (len === 0) return;
+
+        const scale = newLen / len;
+
+        // двигаем только вторую точку сегмента
+        const nx = p1.x + dx * scale;
+        const ny = p1.y + dy * scale;
+
+        pts[i2] = { x: nx, y: ny };
+
+        // замыкаем
+        pts[count] = { ...pts[0] };
+
+        this.closedContour = pts;
+
+        // синхронизация линий
+        this.syncLinesFromContour();
     }
 
-    if (window.floorEditor) window.floorEditor.draw();
-}
+    moveVertex(index, newX, newY) {
+        if (!this.closedContour) return;
 
+        const pts = this.closedContour.slice();
+        const count = pts.length - 1;
+
+        const prev = (index - 1 + count) % count;
+        const next = (index + 1) % count;
+
+        // двигаем только текущую вершину
+        pts[index] = { x: newX, y: newY };
+
+        // НЕ трогаем соседей вообще (это важно!)
+        // иначе ломается ручное изменение стен
+
+        pts[count] = { ...pts[0] };
+
+        this.closedContour = pts;
+
+        // 🔥 ЕДИНСТВЕННАЯ синхронизация
+        this.syncLinesFromContour();
+
+        window.floorEditor?.draw?.();
+    }
 
 }

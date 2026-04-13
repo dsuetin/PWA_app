@@ -38,6 +38,8 @@ export class FloorPlanEditor {
 
         this.contourLocked = false;
 
+        this.dragVertexIndex = -1;
+
         this.resizeCanvas();
         window.addEventListener("resize", () => this.resizeCanvas());
 
@@ -162,16 +164,37 @@ export class FloorPlanEditor {
         const newLen = prompt("Новая длина сегмента (см)");
         if (!newLen) return;
 
-        this.linesManager.resizeSegment(idx, parseFloat(newLen));
+        this.linesManager.resizeSegmentByContour(idx, parseFloat(newLen));
+        // this.linesManager.resizeSegment(idx, parseFloat(newLen));
         this.draw();
     }
     
     onPointerDown(e) {
 
+        if (!this.enabled) return;
+        if (this.lightsDrawer?.enabled) return;
+
+        this.canvas.setPointerCapture(e.pointerId);
+
+        const world = this.screenToWorld(e.clientX, e.clientY);
+
+        // ---------------- VERTEX DRAG (ПЕРВЫЙ ПРИОРИТЕТ) ----------------
         if (this.linesManager.closedContour) {
-            const world = this.screenToWorld(e.clientX, e.clientY);
+
+            const vertexIdx = this.linesManager.getVertexAt(world.x, world.y);
+
+            if (vertexIdx !== -1) {
+                this.dragVertexIndex = vertexIdx;
+                this.isDraggingVertex = true;
+
+                e.preventDefault();
+                return;
+            }
+
+            // ---------------- SEGMENT SELECT ----------------
             const idx = this.linesManager.getSegmentAt(world.x, world.y);
-            if (idx !== null) {
+
+            if (idx !== null && idx !== -1) {
                 this.linesManager.selectedSegmentIndex = idx;
                 this.draw();
                 return;
@@ -179,98 +202,138 @@ export class FloorPlanEditor {
                 if (this.linesManager.selectedSegmentIndex !== null) {
                     this.linesManager.selectedSegmentIndex = null;
                     this.draw();
-                    // allow further processing (do not return) — пользователь кликнул мимо сегмента
                 }
             }
         }
 
-
+        // ---------------- BLOCK DRAWING ----------------
         if (!this.enabled) return;
         if (this.lightsDrawer?.enabled) return;
+        if (this.contourLocked) return;
 
-        this.canvas.setPointerCapture(e.pointerId);
-
-        // десктопная мышь — всегда рисуем
+        // ---------------- MOUSE DRAW ----------------
         if (e.pointerType === "mouse") {
-            if (this.contourLocked) return;
+
             const start = this.linesManager.lastPoint
                 ? { ...this.linesManager.lastPoint }
-                : this.snapToGrid(...Object.values(this.screenToWorld(e.clientX, e.clientY)));
+                : this.snapToGrid(world.x, world.y);
+
             this.linesManager.startLine(start);
             this.isDrawing = true;
             return;
         }
 
-        if (e.pointerType === "touch" && e.touches?.length !== 2) {
-            // рисование одним пальцем
-            if (this.contourLocked) return;
+        // ---------------- TOUCH DRAW (1 finger only) ----------------
+        if (e.pointerType === "touch" && (!e.touches || e.touches.length !== 2)) {
+
             const start = this.linesManager.lastPoint
                 ? { ...this.linesManager.lastPoint }
-                : this.snapToGrid(...Object.values(this.screenToWorld(e.clientX, e.clientY)));
+                : this.snapToGrid(world.x, world.y);
+
             this.linesManager.startLine(start);
             this.isDrawing = true;
             return;
         }
 
-        // блокируем панинг если в режиме zoom
-        if (this.navigationMode === "pan" && e.pointerType === "touch" && e.touches?.length === 2) {
-            this.isPinching = true;
-            this.activeTouches = [...e.touches];
-            this.lastPinchDist = this.getPinchDistance(e.touches);
-            this.isPanning = true;
-            return;
-        }
+        // ---------------- 2 FINGERS (ZOOM / PAN) ----------------
+        if (e.pointerType === "touch" && e.touches?.length === 2) {
 
-        if (this.navigationMode === "zoom" && e.pointerType === "touch" && e.touches?.length === 2) {
             this.isPinching = true;
             this.activeTouches = [...e.touches];
             this.lastPinchDist = this.getPinchDistance(e.touches);
-            this.isPanning = false; // строго запрещаем панинг
+
+            if (this.navigationMode === "pan") {
+                this.isPanning = true;
+            }
+
             return;
         }
     }
 
-
     onPointerMove(e) {
+
+        // ---------------- PAN ----------------
         if (this.isPanning) {
             const dx = e.clientX - this.lastPanX;
             const dy = e.clientY - this.lastPanY;
+
             this.offsetX += dx;
             this.offsetY += dy;
+
             this.lastPanX = e.clientX;
             this.lastPanY = e.clientY;
+
             this.draw();
             return;
         }
 
-        if (!this.isDrawing || !this.linesManager.currentLine) return;
-        const p = this.screenToWorld(e.clientX, e.clientY);
-        const pos = this.snapToGrid(p.x, p.y);
-        this.linesManager.updateLine(pos);
-        this.draw();
+        // ---------------- VERTEX DRAG (ПЕРВЫМ!) ----------------
+        if (this.dragVertexIndex !== -1) {
+            const world = this.screenToWorld(e.clientX, e.clientY);
+
+            this.linesManager.moveVertex(
+                this.dragVertexIndex,
+                world.x,
+                world.y
+            );
+
+            this.draw();
+            return;
+        }
+
+        // ---------------- DRAW LINE ----------------
+        if (this.isDrawing && this.linesManager.currentLine) {
+            const p = this.screenToWorld(e.clientX, e.clientY);
+            const pos = this.snapToGrid(p.x, p.y);
+
+            this.linesManager.updateLine(pos);
+            this.draw();
+            return;
+        }
     }
 
     onPointerUp() {
-        if (this.isPanning) { this.isPanning = false; return; }
-        if (!this.isDrawing || !this.linesManager.currentLine || this.finishLocked) return;
+
+        // ---------------- PAN ----------------
+        if (this.isPanning) {
+            this.isPanning = false;
+            return;
+        }
+
+        // ---------------- VERTEX DRAG STOP ----------------
+        if (this.dragVertexIndex !== -1) {
+            this.dragVertexIndex = -1;
+            this.isDraggingVertex = false;
+            this.draw();
+            return;
+        }
+
+        // ---------------- SAFETY LOCK ----------------
+        if (this.finishLocked) return;
+
+        // ---------------- DRAW MODE ----------------
+        if (!this.isDrawing || !this.linesManager.currentLine) return;
 
         this.finishLocked = true;
         this.isDrawing = false;
 
         const lenStr = prompt("Введите длину линии в см (Отмена — отменить линию):");
+
         if (lenStr === null) {
             this.linesManager.cancelCurrentLine();
-            // пересчёт света по текущему offset/scale
-            // if (this.lightsDrawer) this.lightsDrawer.redraw();
             if (this.lightsDrawer) this.draw();
             this.finishLocked = false;
             return;
         }
 
-        if (lenStr !== "" && !isNaN(lenStr)) this.linesManager.finishLine(parseInt(lenStr, 10));
-        else this.linesManager.finishLine();
+        if (lenStr !== "" && !isNaN(lenStr)) {
+            this.linesManager.finishLine(parseInt(lenStr, 10));
+        } else {
+            this.linesManager.finishLine();
+        }
 
         this.draw();
+
         setTimeout(() => this.finishLocked = false, 0);
     }
 
