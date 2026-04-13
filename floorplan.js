@@ -409,6 +409,15 @@ export class FloorPlanEditor {
         }
     }
 
+    drawArc(x, y, r, a1, a2, color = "black") {
+        const ctx = this.ctx;
+
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.arc(x, y, r, a1, a2);
+        ctx.stroke();
+    }
 
     drawLines() {
         const ctx = this.ctx;
@@ -457,6 +466,7 @@ export class FloorPlanEditor {
 
                 ctx.restore();
             }
+            this.drawAngles(pts);
 
             // =======================
             // 🔥 ВЕРШИНЫ (DRAG POINTS)
@@ -467,15 +477,87 @@ export class FloorPlanEditor {
 
                 const isActive = i === this.dragVertexIndex;
 
+                // =====================
+                // 🔵 ВЕРШИНА
+                // =====================
                 ctx.beginPath();
                 ctx.arc(s.x, s.y, isActive ? 7 : 5, 0, Math.PI * 2);
-
-                ctx.fillStyle = isActive ? "#ff3b30" : "#ffffff";
+                ctx.fillStyle = isActive ? "#ff3b30" : "#fff";
                 ctx.fill();
-
                 ctx.strokeStyle = "#000";
-                ctx.lineWidth = 2;
                 ctx.stroke();
+
+                if (!isActive) continue;
+
+                const ptsArr = this.linesManager.closedContour;
+                const count = ptsArr.length - 1;
+
+                const prev = ptsArr[(i - 1 + count) % count];
+                const next = ptsArr[(i + 1) % count];
+
+                const v1 = { x: prev.x - p.x, y: prev.y - p.y };
+                const v2 = { x: next.x - p.x, y: next.y - p.y };
+
+                const len1 = Math.hypot(v1.x, v1.y);
+                const len2 = Math.hypot(v2.x, v2.y);
+
+                const n1 = { x: v1.x / len1, y: v1.y / len1 };
+                const n2 = { x: v2.x / len2, y: v2.y / len2 };
+
+                const ctx2 = this.ctx;
+
+                // =====================
+                // 1) ВНУТРЕННИЙ УГОЛ
+                // =====================
+                const dot = n1.x * n2.x + n1.y * n2.y;
+                const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
+
+                this.drawArc(s.x, s.y, 20, 0, angle, "#ff3b30");
+
+                ctx2.fillStyle = "#ff3b30";
+                ctx2.font = "12px sans-serif";
+
+                ctx2.fillText(
+                    `${Math.round(angle * 180 / Math.PI)}°`,
+                    s.x + 18,
+                    s.y + 18
+                );
+
+                // =====================
+                // 2) ШТРИХОВЫЕ ОСИ
+                // =====================
+                ctx2.setLineDash([5, 5]);
+                ctx2.strokeStyle = "#888";
+                ctx2.lineWidth = 1;
+
+                // X ось
+                ctx2.beginPath();
+                ctx2.moveTo(s.x - 40, s.y);
+                ctx2.lineTo(s.x + 40, s.y);
+                ctx2.stroke();
+
+                // Y ось
+                ctx2.beginPath();
+                ctx2.moveTo(s.x, s.y - 40);
+                ctx2.lineTo(s.x, s.y + 40);
+                ctx2.stroke();
+
+                ctx2.setLineDash([]);
+
+                // =====================
+                // 3) УГЛЫ К ОСЯМ
+                // =====================
+                const angleX1 = Math.atan2(v1.y, v1.x);
+                const angleX2 = Math.atan2(v2.y, v2.x);
+
+                const deg1 = Math.round((angleX1 * 180 / Math.PI + 360) % 360);
+                const deg2 = Math.round((angleX2 * 180 / Math.PI + 360) % 360);
+
+                ctx2.fillStyle = "#333";
+                ctx2.font = "12px sans-serif";
+
+                ctx2.fillText(`X1: ${deg1}°`, s.x + 45, s.y - 10);
+                ctx2.fillText(`X2: ${deg2}°`, s.x + 45, s.y + 10);
             }
 
             return;
@@ -699,7 +781,92 @@ export class FloorPlanEditor {
         this.draw();
     }
 
+drawAngles(pts) {
+    const ctx = this.ctx;
+    const screen = (p) => this.worldToScreen(p.x, p.y);
 
+    const vec = (a, b) => {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const len = Math.hypot(dx, dy) || 1;
+        return { x: dx / len, y: dy / len };
+    };
+
+    const n = pts.length - 1;
+
+    for (let i = 0; i < n; i++) {
+        const prev = pts[(i - 1 + n) % n];
+        const curr = pts[i];
+        const next = pts[(i + 1) % n];
+
+        const p = screen(curr);
+
+        const v1 = vec(curr, prev);
+        const v2 = vec(curr, next);
+
+        const a1 = Math.atan2(v1.y, v1.x);
+        const a2 = Math.atan2(v2.y, v2.x);
+
+        const radius = 18;
+
+        // 🔥 ключ: определяем "внутреннюю сторону" через cross product
+        const cross = v1.x * v2.y - v1.y * v2.x;
+
+        let start = a1;
+        let end = a2;
+        let ccw = cross < 0; // <--- ВАЖНО
+
+        // нормализуем чтобы дуга была именно внутренняя (а не 270°)
+        if (ccw) {
+            if (end < start) end += Math.PI * 2;
+        } else {
+            if (start < end) start += Math.PI * 2;
+        }
+
+        // ---------------- DRAW ARC ----------------
+        ctx.beginPath();
+        ctx.strokeStyle = "orange";
+        ctx.lineWidth = 2;
+
+        ctx.arc(p.x, p.y, radius, start, end, ccw);
+        ctx.stroke();
+
+        // ---------------- LABEL ----------------
+        const bis = {
+            x: v1.x + v2.x,
+            y: v1.y + v2.y
+        };
+
+        const len = Math.hypot(bis.x, bis.y) || 1;
+        bis.x /= len;
+        bis.y /= len;
+
+        const deg = Math.round(
+            Math.acos(
+                Math.max(-1, Math.min(1, v1.x * v2.x + v1.y * v2.y))
+            ) * 180 / Math.PI
+        );
+
+        ctx.fillStyle = "black";
+        ctx.font = "12px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        ctx.fillText(
+            deg + "°",
+            p.x + bis.x * 35,
+            p.y + bis.y * 35
+        );
+    }
+}
+
+    getAngleDeg(dx, dy) {
+        return Math.atan2(dy, dx) * 180 / Math.PI;
+    }
+
+    formatAngle(a) {
+        return Math.round((a + 360) % 360);
+    }
 
 
     exportData() { return this.linesManager.exportData(); }
