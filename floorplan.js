@@ -251,7 +251,10 @@ export class FloorPlanEditor {
     }
 
     onPointerMove(e) {
+        const world = this.screenToWorld(e.clientX, e.clientY);
+        const idx = this.linesManager.getVertexAt(world.x, world.y);
 
+        this.canvas.style.cursor = idx !== -1 ? "grab" : "default";
         // ---------------- PAN ----------------
         if (this.isPanning) {
             const dx = e.clientX - this.lastPanX;
@@ -290,6 +293,7 @@ export class FloorPlanEditor {
             this.draw();
             return;
         }
+        
     }
 
     onPointerUp() {
@@ -454,6 +458,26 @@ export class FloorPlanEditor {
                 ctx.restore();
             }
 
+            // =======================
+            // 🔥 ВЕРШИНЫ (DRAG POINTS)
+            // =======================
+            for (let i = 0; i < pts.length - 1; i++) {
+                const p = pts[i];
+                const s = this.worldToScreen(p.x, p.y);
+
+                const isActive = i === this.dragVertexIndex;
+
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, isActive ? 7 : 5, 0, Math.PI * 2);
+
+                ctx.fillStyle = isActive ? "#ff3b30" : "#ffffff";
+                ctx.fill();
+
+                ctx.strokeStyle = "#000";
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+
             return;
         }
 
@@ -493,7 +517,7 @@ export class FloorPlanEditor {
             ctx.restore();
         }
 
-        // текущая линия
+        // ---------------- текущая линия ----------------
         if (this.linesManager.currentLine) {
             const L = this.linesManager.currentLine;
             const a = this.worldToScreen(L.x1, L.y1);
@@ -506,29 +530,23 @@ export class FloorPlanEditor {
             ctx.lineTo(b.x, b.y);
             ctx.stroke();
 
-            // ---------- ДЛИНА ----------
             const dx = L.x2 - L.x1;
             const dy = L.y2 - L.y1;
-            const len = Math.round(Math.hypot(dx, dy)); // в см
+            const len = Math.round(Math.hypot(dx, dy));
 
             const midX = (a.x + b.x) / 2;
             const midY = (a.y + b.y) / 2;
 
             ctx.save();
-
             ctx.translate(midX, midY);
 
             const isVertical = Math.abs(dx) < Math.abs(dy);
+            if (isVertical) ctx.rotate(-Math.PI / 2);
 
-            if (isVertical) {
-                ctx.rotate(-Math.PI / 2);
-            }
-
-            ctx.fillStyle = ctx.strokeStyle;
+            ctx.fillStyle = "#ff0080";
             ctx.font = "14px sans-serif";
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-
             ctx.fillText(len + " см", 0, -10);
 
             ctx.restore();
