@@ -964,30 +964,230 @@ export class LinesManager {
         // синхронизация линий
         this.syncLinesFromContour();
     }
+    snapToStep(angle, step = 5 * Math.PI / 180) {
+        return Math.round(angle / step) * step;
+    }
+moveVertex(index, newX, newY) {
+    if (!this.closedContour) return;
 
-    moveVertex(index, newX, newY) {
-        if (!this.closedContour) return;
+    const pts = this.closedContour.slice();
+    const count = pts.length - 1;
 
-        const pts = this.closedContour.slice();
+    const prev = (index - 1 + count) % count;
+    const next = (index + 1) % count;
+
+    const prevPt = pts[prev];
+    const nextPt = pts[next];
+
+    let x = newX;
+    let y = newY;
+
+    // -----------------------------
+    // 🎯 1. SNAP ПО 5 ГРАДУСАМ (RADIAL)
+    // -----------------------------
+    const SNAP_STEP = (5 * Math.PI) / 180;
+    const SNAP_EPS = (2.5 * Math.PI) / 180;
+
+    const v1 = { x: prevPt.x - x, y: prevPt.y - y };
+    const v2 = { x: nextPt.x - x, y: nextPt.y - y };
+
+    const a1 = Math.atan2(v1.y, v1.x);
+    const a2 = Math.atan2(v2.y, v2.x);
+
+    const snap = (a) => Math.round(a / SNAP_STEP) * SNAP_STEP;
+
+    const s1 = snap(a1);
+    const s2 = snap(a2);
+
+    const d1 = Math.abs(a1 - s1);
+    const d2 = Math.abs(a2 - s2);
+
+    // если ОБЕ стены близки к лучам сетки → стабилизируем вершину
+    if (d1 < SNAP_EPS && d2 < SNAP_EPS) {
+        const len1 = Math.hypot(v1.x, v1.y);
+        const len2 = Math.hypot(v2.x, v2.y);
+
+        const dir1 = { x: Math.cos(s1), y: Math.sin(s1) };
+        const dir2 = { x: Math.cos(s2), y: Math.sin(s2) };
+
+        const p1 = {
+            x: prevPt.x - dir1.x * len1,
+            y: prevPt.y - dir1.y * len1
+        };
+
+        const p2 = {
+            x: nextPt.x - dir2.x * len2,
+            y: nextPt.y - dir2.y * len2
+        };
+
+        // мягкое усреднение (чтобы не дёргалось)
+        x = (p1.x + p2.x) / 2;
+        y = (p1.y + p2.y) / 2;
+    }
+
+    // -----------------------------
+    // 🎯 2. ОБНОВЛЯЕМ ТОЛЬКО ВЕРШИНУ
+    // -----------------------------
+    pts[index] = { x, y };
+
+    // замыкание
+    pts[count] = { ...pts[0] };
+
+    this.closedContour = pts;
+
+    // -----------------------------
+    // 🎯 3. ПЕРЕСБОРКА ЛИНИЙ (ТОЛЬКО СВЯЗЬ)
+    // -----------------------------
+    this.lines = [];
+
+    for (let i = 0; i < pts.length - 1; i++) {
+        const seg = this.normalizeSegment(
+            pts[i].x, pts[i].y,
+            pts[i + 1].x, pts[i + 1].y
+        );
+
+        this.lines.push({
+            x1: seg.x1,
+            y1: seg.y1,
+            x2: seg.x2,
+            y2: seg.y2,
+            _id: this._nextLineId++
+        });
+    }
+
+    if (window.floorEditor?.draw) {
+        window.floorEditor.draw();
+    }
+}
+
+    snapVertexAngle(index, x, y) {
+        if (!this.closedContour) return { x, y };
+
+        const pts = this.closedContour;
         const count = pts.length - 1;
 
-        const prev = (index - 1 + count) % count;
-        const next = (index + 1) % count;
+        const prev = pts[(index - 1 + count) % count];
+        const curr = pts[index];
+        const next = pts[(index + 1) % count];
 
-        // двигаем только текущую вершину
-        pts[index] = { x: newX, y: newY };
+        // вектор от prev → curr (фиксируем)
+        const v1 = {
+            x: curr.x - prev.x,
+            y: curr.y - prev.y
+        };
 
-        // НЕ трогаем соседей вообще (это важно!)
-        // иначе ломается ручное изменение стен
+        const len1 = Math.hypot(v1.x, v1.y) || 1;
+        v1.x /= len1;
+        v1.y /= len1;
 
-        pts[count] = { ...pts[0] };
+        // новый вектор curr → newPoint
+        let v2 = {
+            x: x - curr.x,
+            y: y - curr.y
+        };
 
-        this.closedContour = pts;
+        const len2 = Math.hypot(v2.x, v2.y) || 1;
 
-        // 🔥 ЕДИНСТВЕННАЯ синхронизация
-        this.syncLinesFromContour();
+        // угол между ними
+        let angle = Math.atan2(v2.y, v2.x) - Math.atan2(v1.y, v1.x);
 
-        window.floorEditor?.draw?.();
+        // нормализация
+        while (angle > Math.PI) angle -= Math.PI * 2;
+        while (angle < -Math.PI) angle += Math.PI * 2;
+
+        // 🔥 SNAP К 10°
+        const snapStep = 10 * Math.PI / 180;
+        const snappedAngle = Math.round(angle / snapStep) * snapStep;
+
+        // новый угол
+        const baseAngle = Math.atan2(v1.y, v1.x);
+        const finalAngle = baseAngle + snappedAngle;
+
+        return {
+            x: curr.x + Math.cos(finalAngle) * len2,
+            y: curr.y + Math.sin(finalAngle) * len2
+        };
+    }
+
+    evaluateAngles(index, x, y) {
+        const pts = this.closedContour;
+        const n = pts.length - 1;
+
+        const get = (i) => pts[(i + n) % n];
+
+        const A = get(index - 1);
+        const B = { x, y };
+        const C = get(index + 1);
+        const P = get(index - 2);
+        const N = get(index + 2);
+
+        const angle = (p1, p2, p3) => {
+            const v1 = { x: p1.x - p2.x, y: p1.y - p2.y };
+            const v2 = { x: p3.x - p2.x, y: p3.y - p2.y };
+
+            const dot = v1.x * v2.x + v1.y * v2.y;
+            const len = Math.hypot(v1.x, v1.y) * Math.hypot(v2.x, v2.y) || 1;
+
+            return Math.acos(Math.max(-1, Math.min(1, dot / len))) * 180 / Math.PI;
+        };
+
+        const snapError = (deg) => {
+            const step = 5; // 🔥 теперь 5°
+            const snapped = Math.round(deg / step) * step;
+
+            const diff = Math.abs(deg - snapped);
+
+            // 🔥 магнитное поле
+            if (diff < 2) return 0;        // почти идеально → фиксируем
+            if (diff < 8) return diff * 0.3; // притягивание
+            return diff * 2;               // вне зоны — штраф
+        };
+
+        let error = 0;
+
+        // угол в B
+        error += snapError(angle(A, B, C));
+
+        // угол в A
+        error += snapError(angle(P, A, B));
+
+        // угол в C
+        error += snapError(angle(B, C, N));
+
+        return error;
+    }
+
+    smartSnapVertex(index, x, y) {
+        let best = { x, y };
+        let bestScore = Infinity;
+
+        const radius = 30;
+        const steps = 24;
+
+        for (let i = 0; i < steps; i++) {
+            const angle = (i / steps) * Math.PI * 2;
+
+            const cx = x + Math.cos(angle) * radius;
+            const cy = y + Math.sin(angle) * radius;
+
+            const score = this.evaluateAngles(index, cx, cy);
+
+            if (score < bestScore) {
+                bestScore = score;
+                best = { x: cx, y: cy };
+            }
+        }
+
+        // 🔥 почти идеально → жёсткий snap
+        if (bestScore < 1.5) {
+            return best;
+        }
+
+        // 🔥 плавное притягивание
+        return {
+            x: x + (best.x - x) * 0.25,
+            y: y + (best.y - y) * 0.25
+        };
     }
 
 }

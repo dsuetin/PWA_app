@@ -39,6 +39,7 @@ export class FloorPlanEditor {
         this.contourLocked = false;
 
         this.dragVertexIndex = -1;
+        this.dragPreviewVertex = null;
 
         this.resizeCanvas();
         window.addEventListener("resize", () => this.resizeCanvas());
@@ -54,6 +55,31 @@ export class FloorPlanEditor {
         this.canvas.addEventListener("touchmove", e => this.onTouchMove(e), { passive: false });
         this.canvas.addEventListener("touchend", e => this.onTouchEnd(e));
         this.canvas.addEventListener("dblclick", (e) => this.onDoubleClick(e));
+
+        this.canvas.addEventListener("wheel", (e) => {
+            e.preventDefault();
+
+            const rect = this.canvas.getBoundingClientRect();
+
+            const centerX = e.clientX - rect.left;
+            const centerY = e.clientY - rect.top;
+
+            const worldBefore = {
+                x: (centerX - this.offsetX) / this.scale,
+                y: (centerY - this.offsetY) / this.scale
+            };
+
+            const zoomIntensity = 0.001;
+            const delta = -e.deltaY * zoomIntensity;
+
+            this.scale *= (1 + delta);
+            this.scale = Math.max(this.MIN_SCALE, Math.min(this.MAX_SCALE, this.scale));
+
+            this.offsetX = centerX - worldBefore.x * this.scale;
+            this.offsetY = centerY - worldBefore.y * this.scale;
+
+            this.draw();
+        }, { passive: false });
 
         window.addEventListener("keydown", e => {
             if (e.code === "Space") this.spacePressed = true;
@@ -131,6 +157,7 @@ export class FloorPlanEditor {
         this.canvas.width = rect.width * dpr;
         this.canvas.height = rect.height * dpr;
         this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        // this.ctx.setTransform(1, 0, 0, 1, 0, 0);
         this.draw();
     }
 
@@ -174,14 +201,34 @@ export class FloorPlanEditor {
         if (!this.enabled) return;
         if (this.lightsDrawer?.enabled) return;
 
-        this.canvas.setPointerCapture(e.pointerId);
+        // ---------------- DESKTOP PAN START (RIGHT MOUSE OR SPACE) ----------------
+        if (e.pointerType === "mouse") {
+
+            // pan только если:
+            // - правая кнопка
+            // - или зажат space (у тебя уже есть spacePressed)
+
+            if (e.button === 2 || this.spacePressed) {
+                this.isPanning = true;
+                this.lastPanX = e.clientX;
+                this.lastPanY = e.clientY;
+
+                e.preventDefault();
+                return;
+            }
+        }
+        if (e.pointerType !== "touch" || e.isPrimary) {
+            this.canvas.setPointerCapture(e.pointerId);
+        }
 
         const world = this.screenToWorld(e.clientX, e.clientY);
 
         // ---------------- VERTEX DRAG (ПЕРВЫЙ ПРИОРИТЕТ) ----------------
+        
         if (this.linesManager.closedContour) {
 
             const vertexIdx = this.linesManager.getVertexAt(world.x, world.y);
+            this.dragPreviewVertex = vertexIdx;
 
             if (vertexIdx !== -1) {
                 this.dragVertexIndex = vertexIdx;
@@ -207,7 +254,6 @@ export class FloorPlanEditor {
         }
 
         // ---------------- BLOCK DRAWING ----------------
-        if (!this.enabled) return;
         if (this.lightsDrawer?.enabled) return;
         if (this.contourLocked) return;
 
@@ -224,7 +270,7 @@ export class FloorPlanEditor {
         }
 
         // ---------------- TOUCH DRAW (1 finger only) ----------------
-        if (e.pointerType === "touch" && (!e.touches || e.touches.length !== 2)) {
+        if (e.pointerType === "touch" && !this.isPinching) {
 
             const start = this.linesManager.lastPoint
                 ? { ...this.linesManager.lastPoint }
@@ -244,6 +290,9 @@ export class FloorPlanEditor {
 
             if (this.navigationMode === "pan") {
                 this.isPanning = true;
+
+                this.lastPanX = e.clientX;
+                this.lastPanY = e.clientY;
             }
 
             return;
@@ -257,27 +306,47 @@ export class FloorPlanEditor {
         this.canvas.style.cursor = idx !== -1 ? "grab" : "default";
         // ---------------- PAN ----------------
         if (this.isPanning) {
+
+            // const x = e.clientX ?? e.touches?.[0]?.clientX;
+            // const y = e.clientY ?? e.touches?.[0]?.clientY;
+
+            // if (x == null || y == null) return;
+
+            // const dx = x - this.lastPanX;
+            // const dy = y - this.lastPanY;
             const dx = e.clientX - this.lastPanX;
             const dy = e.clientY - this.lastPanY;
+
+            // защита от NaN (ВАЖНО для mobile Safari)
+            if (!isFinite(dx) || !isFinite(dy)) return;
 
             this.offsetX += dx;
             this.offsetY += dy;
 
             this.lastPanX = e.clientX;
             this.lastPanY = e.clientY;
-
+            console.log("PAN", this.offsetX, this.offsetY); // 👈 добавь
             this.draw();
             return;
         }
 
         // ---------------- VERTEX DRAG (ПЕРВЫМ!) ----------------
         if (this.dragVertexIndex !== -1) {
-            const world = this.screenToWorld(e.clientX, e.clientY);
+            // const world = this.screenToWorld(e.clientX, e.clientY);
+
+            // 1️⃣ snap к сетке
+            let { x, y } = this.snapToGrid(world.x, world.y);
+
+            // // 2️⃣ snap к углу
+            // const snappedAngle = this.linesManager.smartSnapVertex(
+            //     this.dragVertexIndex,
+            //     world.x, world.y
+            // );
 
             this.linesManager.moveVertex(
                 this.dragVertexIndex,
-                world.x,
-                world.y
+                x,
+                y
             );
 
             this.draw();
@@ -297,7 +366,9 @@ export class FloorPlanEditor {
     }
 
     onPointerUp() {
-
+        this.activeTouches = [];
+        this.isPinching = false;
+        this.dragPreviewVertex = null;
         // ---------------- PAN ----------------
         if (this.isPanning) {
             this.isPanning = false;
@@ -504,8 +575,6 @@ export class FloorPlanEditor {
                 const n1 = { x: v1.x / len1, y: v1.y / len1 };
                 const n2 = { x: v2.x / len2, y: v2.y / len2 };
 
-                const ctx2 = this.ctx;
-
                 // =====================
                 // 1) ВНУТРЕННИЙ УГОЛ
                 // =====================
@@ -514,10 +583,10 @@ export class FloorPlanEditor {
 
                 this.drawArc(s.x, s.y, 20, 0, angle, "#ff3b30");
 
-                ctx2.fillStyle = "#ff3b30";
-                ctx2.font = "12px sans-serif";
+                ctx.fillStyle = "#ff3b30";
+                ctx.font = "12px sans-serif";
 
-                ctx2.fillText(
+                ctx.fillText(
                     `${Math.round(angle * 180 / Math.PI)}°`,
                     s.x + 18,
                     s.y + 18
@@ -526,23 +595,23 @@ export class FloorPlanEditor {
                 // =====================
                 // 2) ШТРИХОВЫЕ ОСИ
                 // =====================
-                ctx2.setLineDash([5, 5]);
-                ctx2.strokeStyle = "#888";
-                ctx2.lineWidth = 1;
+                ctx.setLineDash([5, 5]);
+                ctx.strokeStyle = "#888";
+                ctx.lineWidth = 1;
 
                 // X ось
-                ctx2.beginPath();
-                ctx2.moveTo(s.x - 40, s.y);
-                ctx2.lineTo(s.x + 40, s.y);
-                ctx2.stroke();
+                ctx.beginPath();
+                ctx.moveTo(s.x - 40, s.y);
+                ctx.lineTo(s.x + 40, s.y);
+                ctx.stroke();
 
                 // Y ось
-                ctx2.beginPath();
-                ctx2.moveTo(s.x, s.y - 40);
-                ctx2.lineTo(s.x, s.y + 40);
-                ctx2.stroke();
+                ctx.beginPath();
+                ctx.moveTo(s.x, s.y - 40);
+                ctx.lineTo(s.x, s.y + 40);
+                ctx.stroke();
 
-                ctx2.setLineDash([]);
+                ctx.setLineDash([]);
 
                 // =====================
                 // 3) УГЛЫ К ОСЯМ
@@ -553,11 +622,11 @@ export class FloorPlanEditor {
                 const deg1 = Math.round((angleX1 * 180 / Math.PI + 360) % 360);
                 const deg2 = Math.round((angleX2 * 180 / Math.PI + 360) % 360);
 
-                ctx2.fillStyle = "#333";
-                ctx2.font = "12px sans-serif";
+                ctx.fillStyle = "#333";
+                ctx.font = "12px sans-serif";
 
-                ctx2.fillText(`X1: ${deg1}°`, s.x + 45, s.y - 10);
-                ctx2.fillText(`X2: ${deg2}°`, s.x + 45, s.y + 10);
+                ctx.fillText(`X1: ${deg1}°`, s.x + 45, s.y - 10);
+                ctx.fillText(`X2: ${deg2}°`, s.x + 45, s.y + 10);
             }
 
             return;
@@ -635,13 +704,59 @@ export class FloorPlanEditor {
         }
     }
 
+    drawRadialGrid(cx, cy) {
+        const ctx = this.ctx;
 
+        const stepRadius = this.gridSize * this.scale;
+        const stepAngle = (5 * Math.PI) / 180;
+
+        ctx.save();
+        ctx.strokeStyle = "rgba(0,0,0,0.15)";
+        ctx.lineWidth = 1;
+
+        // ---------- круги ----------
+        for (let r = stepRadius; r < 2000; r += stepRadius) {
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        // ---------- лучи ----------
+        const maxR = 2000;
+        for (let a = 0; a < Math.PI * 2; a += stepAngle) {
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(
+                cx + Math.cos(a) * maxR,
+                cy + Math.sin(a) * maxR
+            );
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
 
     draw() {
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
         this.ctx.fillStyle = "#f8f8f8"; this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        this.drawGrid();
+        if (
+            this.dragPreviewVertex !== null &&
+            this.dragPreviewVertex !== -1 &&
+            this.linesManager.closedContour
+        ) {
+            const pts = this.linesManager.closedContour;
+            const p = pts[this.dragPreviewVertex];
+
+            if (p) {
+                const s = this.worldToScreen(p.x, p.y);
+                this.drawRadialGrid(s.x, s.y);
+            }
+        } else {
+            this.drawGrid();
+        }
+        console.log("DRAW", this.offsetX, this.offsetY, this.scale);
         this.drawLines();
+
         if (this.lightsDrawer) this.lightsDrawer.drawWithOffset(this.offsetX, this.offsetY, this.scale);
     }
 
@@ -781,93 +896,84 @@ export class FloorPlanEditor {
         this.draw();
     }
 
-drawAngles(pts) {
-    const ctx = this.ctx;
-    const screen = (p) => this.worldToScreen(p.x, p.y);
+    drawAngles(pts) {
+        const ctx = this.ctx;
+        const screen = (p) => this.worldToScreen(p.x, p.y);
 
-    const vec = (a, b) => {
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const len = Math.hypot(dx, dy) || 1;
-        return { x: dx / len, y: dy / len };
-    };
-
-    const n = pts.length - 1;
-
-    for (let i = 0; i < n; i++) {
-        const prev = pts[(i - 1 + n) % n];
-        const curr = pts[i];
-        const next = pts[(i + 1) % n];
-
-        const p = screen(curr);
-
-        const v1 = vec(curr, prev);
-        const v2 = vec(curr, next);
-
-        const a1 = Math.atan2(v1.y, v1.x);
-        const a2 = Math.atan2(v2.y, v2.x);
-
-        const radius = 18;
-
-        // 🔥 ключ: определяем "внутреннюю сторону" через cross product
-        const cross = v1.x * v2.y - v1.y * v2.x;
-
-        let start = a1;
-        let end = a2;
-        let ccw = cross < 0; // <--- ВАЖНО
-
-        // нормализуем чтобы дуга была именно внутренняя (а не 270°)
-        if (ccw) {
-            if (end < start) end += Math.PI * 2;
-        } else {
-            if (start < end) start += Math.PI * 2;
-        }
-
-        // ---------------- DRAW ARC ----------------
-        ctx.beginPath();
-        ctx.strokeStyle = "orange";
-        ctx.lineWidth = 2;
-
-        ctx.arc(p.x, p.y, radius, start, end, ccw);
-        ctx.stroke();
-
-        // ---------------- LABEL ----------------
-        const bis = {
-            x: v1.x + v2.x,
-            y: v1.y + v2.y
+        const vec = (a, b) => {
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const len = Math.hypot(dx, dy) || 1;
+            return { x: dx / len, y: dy / len };
         };
 
-        const len = Math.hypot(bis.x, bis.y) || 1;
-        bis.x /= len;
-        bis.y /= len;
+        const n = pts.length - 1;
 
-        const deg = Math.round(
-            Math.acos(
-                Math.max(-1, Math.min(1, v1.x * v2.x + v1.y * v2.y))
-            ) * 180 / Math.PI
-        );
+        for (let i = 0; i < n; i++) {
+            const prev = pts[(i - 1 + n) % n];
+            const curr = pts[i];
+            const next = pts[(i + 1) % n];
 
-        ctx.fillStyle = "black";
-        ctx.font = "12px sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
+            const p = screen(curr);
 
-        ctx.fillText(
-            deg + "°",
-            p.x + bis.x * 35,
-            p.y + bis.y * 35
-        );
+            const v1 = vec(curr, prev);
+            const v2 = vec(curr, next);
+
+            const a1 = Math.atan2(v1.y, v1.x);
+            const a2 = Math.atan2(v2.y, v2.x);
+
+            const radius = 18;
+
+            // 🔥 ключ: определяем "внутреннюю сторону" через cross product
+            const cross = v1.x * v2.y - v1.y * v2.x;
+
+            let start = a1;
+            let end = a2;
+            let ccw = cross < 0; // <--- ВАЖНО
+
+            // нормализуем чтобы дуга была именно внутренняя (а не 270°)
+            if (ccw) {
+                if (end < start) end += Math.PI * 2;
+            } else {
+                if (start < end) start += Math.PI * 2;
+            }
+
+            // ---------------- DRAW ARC ----------------
+            ctx.beginPath();
+            ctx.strokeStyle = "orange";
+            ctx.lineWidth = 2;
+
+            ctx.arc(p.x, p.y, radius, start, end, ccw);
+            ctx.stroke();
+
+            // ---------------- LABEL ----------------
+            const bis = {
+                x: v1.x + v2.x,
+                y: v1.y + v2.y
+            };
+
+            const len = Math.hypot(bis.x, bis.y) || 1;
+            bis.x /= len;
+            bis.y /= len;
+
+            const deg = Math.round(
+                Math.acos(
+                    Math.max(-1, Math.min(1, v1.x * v2.x + v1.y * v2.y))
+                ) * 180 / Math.PI
+            );
+
+            ctx.fillStyle = "black";
+            ctx.font = "12px sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+
+            ctx.fillText(
+                deg + "°",
+                p.x + bis.x * 35,
+                p.y + bis.y * 35
+            );
+        }
     }
-}
-
-    getAngleDeg(dx, dy) {
-        return Math.atan2(dy, dx) * 180 / Math.PI;
-    }
-
-    formatAngle(a) {
-        return Math.round((a + 360) % 360);
-    }
-
 
     exportData() { return this.linesManager.exportData(); }
     importData(lines) { this.linesManager.importData(lines); this.draw(); }
