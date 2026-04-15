@@ -1017,6 +1017,68 @@ export class LinesManager {
         if (window.floorEditor?.draw) window.floorEditor.draw();
     }
 
+    addVertexOnSegment(index, offsetCm) {
+        if (!this.closedContour) return;
+
+        const pts = this.closedContour.slice();
+        const n = pts.length - 1;
+
+        if (n < 2) return;
+
+        index = ((index % n) + n) % n;
+
+        const A = pts[index];
+        const B = pts[(index + 1) % n];
+
+        const isVertical = Math.abs(A.x - B.x) < Math.abs(A.y - B.y);
+
+        let newPoint;
+
+        if (isVertical) {
+            // 🔥 от верхней точки
+            const top = A.y < B.y ? A : B;
+
+            newPoint = {
+                x: top.x,
+                y: top.y + offsetCm
+            };
+        } else {
+            // 🔥 от левой точки
+            const left = A.x < B.x ? A : B;
+
+            newPoint = {
+                x: left.x + offsetCm,
+                y: left.y
+            };
+        }
+
+        // 🔥 вставляем новую точку между index и index+1
+        pts.splice(index + 1, 0, newPoint);
+
+        // замыкаем контур
+        pts[pts.length - 1] = { ...pts[0] };
+
+        // 🔥 пересобираем линии
+        this.lines = [];
+
+        for (let i = 0; i < pts.length - 1; i++) {
+            const seg = this.normalizeSegment(
+                pts[i].x, pts[i].y,
+                pts[i + 1].x, pts[i + 1].y
+            );
+
+            this.lines.push({
+                x1: seg.x1,
+                y1: seg.y1,
+                x2: seg.x2,
+                y2: seg.y2,
+                _id: this._nextLineId++
+            });
+        }
+
+        this.closedContour = pts;
+        this.selectedSegmentIndex = null;
+    }
 
     areAllAnglesRight(toleranceDeg = 0.1) {
         if (!this.closedContour) return false;

@@ -806,6 +806,43 @@ export class FloorPlanEditor {
         this.draw();
     }
 
+    // в FloorPlanEditor (например, внизу класса)
+    addVertexToSelectedSegment() {
+        const idx = this.linesManager.selectedSegmentIndex;
+        if (idx === null || idx === undefined) {
+            alert("Сначала выделите сегмент (клик по стене).");
+            return;
+        }
+        if (!this.linesManager.closedContour) {
+            alert("Контур не замкнут.");
+            return;
+        }
+
+        const input = prompt("Сколько (см) отступить от левой/верхней точки сегмента?");
+        if (input === null) return;
+
+        const offset = parseFloat(input);
+        if (isNaN(offset) || offset <= 0) {
+            alert("Неверное значение.");
+            return;
+        }
+
+        // Защитная проверка: длина сегмента
+        const pts = this.linesManager.closedContour;
+        const n = pts.length - 1;
+        const a = pts[idx];
+        const b = pts[(idx + 1) % n];
+        const isVertical = Math.abs(a.x - b.x) < Math.abs(a.y - b.y);
+        const segLen = isVertical ? Math.abs(a.y - b.y) : Math.abs(a.x - b.x);
+        if (offset >= segLen) {
+            alert("Отступ должен быть меньше длины сегмента.");
+            return;
+        }
+
+        this.linesManager.addVertexOnSegment(idx, offset);
+        this.draw();
+    }
+
     deleteSelectedSegment() {
         const lm = this.linesManager;
         if (!lm.areAllAnglesRight()) {

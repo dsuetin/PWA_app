@@ -92,6 +92,12 @@ function setMode(mode) {
     redrawAll();
 }
 
+const addVertexBtn = document.getElementById("addVertexBtn");
+addVertexBtn?.addEventListener("click", () => {
+    if (!floorEditor) return;
+    floorEditor.addVertexToSelectedSegment();
+});
+
 // ------------------------------------
 // UNDO
 // ------------------------------------
