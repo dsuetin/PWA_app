@@ -188,11 +188,21 @@ export class FloorPlanEditor {
 
         if (idx === -1 || idx === null) return;
 
-        const newLen = prompt("Новая длина сегмента (см)");
-        if (!newLen) return;
+        const input = prompt("Новая длина сегмента (см). '-' — двигать в другую сторону");
+        if (!input) return;
 
-        this.linesManager.resizeSegmentByContour(idx, parseFloat(newLen));
-        // this.linesManager.resizeSegment(idx, parseFloat(newLen));
+        const value = parseFloat(input);
+        if (isNaN(value)) return;
+
+        // направление изменения
+        const reverse = input.trim().startsWith("-");
+
+        this.linesManager.resizeSegmentByContour(
+            idx,
+            Math.abs(value),
+            reverse
+        );
+
         this.draw();
     }
     

@@ -930,43 +930,93 @@ export class LinesManager {
         return -1;
     }
 
-    resizeSegmentByContour(index, newLen) {
-        if (!this.closedContour) return;
 
+    resizeSegmentByContour(index, newLength, reverse = false) {
+        if (!this.closedContour) return;
         const pts = this.closedContour.slice();
         const count = pts.length - 1;
+        if (count < 1) return;
 
-        const i1 = index;
-        const i2 = (index + 1) % count;
+        // нормализуем индекс и получаем точки сегмента (без повторяющейся последней точки)
+        index = ((index % count) + count) % count;
+        const A = pts[index];
+        const B = pts[(index + 1) % count];
 
-        const p1 = pts[i1];
-        const p2 = pts[i2];
+        // абсолютная длина (в тех же единицах, что и точки)
+        const L = Math.abs(newLength);
 
-        const dx = p2.x - p1.x;
-        const dy = p2.y - p1.y;
+        const isVertical = (A.x === B.x);
 
-        const len = Math.hypot(dx, dy);
-        if (len === 0) return;
+        // helper: записать новую точку в pts (с учётом того, какая точка была A/B)
+        const setPoint = (posIndex, x, y) => {
+            pts[posIndex] = { x: x, y: y };
+        };
 
-        const scale = newLen / len;
+        if (isVertical) {
+            // вертикальная: определим top (min y) и bottom (max y)
+            const topIdx = (A.y < B.y) ? index : (index + 1) % count;
+            const bottomIdx = (A.y < B.y) ? (index + 1) % count : index;
 
-        // двигаем только вторую точку сегмента
-        const nx = p1.x + dx * scale;
-        const ny = p1.y + dy * scale;
+            const top = pts[topIdx];
+            const bottom = pts[bottomIdx];
 
-        pts[i2] = { x: nx, y: ny };
+            if (!reverse) {
+                // двигаем нижнюю точку так, чтобы расстояние от top стало L (вниз когда L положительное)
+                const newBottomY = top.y + L;
+                setPoint(bottomIdx, bottom.x, newBottomY);
+            } else {
+                // двигаем верхнюю точку так, чтобы расстояние от top до bottom стало L,
+                // то есть top = bottom.y - L (поднимаем вверх)
+                const newTopY = bottom.y - L;
+                setPoint(topIdx, top.x, newTopY);
+            }
+        } else {
+            // горизонтальная: определим left (min x) и right (max x)
+            const leftIdx = (A.x < B.x) ? index : (index + 1) % count;
+            const rightIdx = (A.x < B.x) ? (index + 1) % count : index;
 
-        // замыкаем
+            const left = pts[leftIdx];
+            const right = pts[rightIdx];
+
+            if (!reverse) {
+                // двигаем правую точку вправо: newRightX = left.x + L
+                const newRightX = left.x + L;
+                setPoint(rightIdx, newRightX, right.y);
+            } else {
+                // двигаем левую точку влево: newLeftX = right.x - L
+                const newLeftX = right.x - L;
+                setPoint(leftIdx, newLeftX, left.y);
+            }
+        }
+
+        // сохраняем замыкание
         pts[count] = { ...pts[0] };
 
-        this.closedContour = pts;
+        // пересобираем линии, как в других местах
+        this.lines = [];
+        for (let i = 0; i < pts.length - 1; i++) {
+            const seg = this.normalizeSegment(
+                pts[i].x, pts[i].y,
+                pts[i + 1].x, pts[i + 1].y
+            );
 
-        // синхронизация линий
-        this.syncLinesFromContour();
+            this.lines.push({
+                x1: seg.x1,
+                y1: seg.y1,
+                x2: seg.x2,
+                y2: seg.y2,
+                _id: this._nextLineId++
+            });
+        }
+
+        // обновляем закрытый контур и триггерим перерисовку
+        this.closedContour = pts;
+        this.currentLine = null;
+        this.selectedSegmentIndex = null;
+
+        if (window.floorEditor?.draw) window.floorEditor.draw();
     }
-    snapToStep(angle, step = 5 * Math.PI / 180) {
-        return Math.round(angle / step) * step;
-    }
+
 moveVertex(index, newX, newY) {
     if (!this.closedContour) return;
 
