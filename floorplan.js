@@ -808,6 +808,10 @@ export class FloorPlanEditor {
 
     deleteSelectedSegment() {
         const lm = this.linesManager;
+        if (!lm.areAllAnglesRight()) {
+            alert("Все углы должны быть прямыми (90°)");
+            return;
+        }
         const idx = lm.selectedSegmentIndex;
 
         if (idx === null || idx === undefined) return;

@@ -1017,6 +1017,53 @@ export class LinesManager {
         if (window.floorEditor?.draw) window.floorEditor.draw();
     }
 
+
+    areAllAnglesRight(toleranceDeg = 0.1) {
+        if (!this.closedContour) return false;
+
+        const pts = this.closedContour;
+        const n = pts.length - 1; // последний = первый
+
+        if (n < 3) return false;
+
+        const toDeg = (rad) => rad * 180 / Math.PI;
+
+        for (let i = 0; i < n; i++) {
+            const prev = pts[(i - 1 + n) % n];
+            const curr = pts[i];
+            const next = pts[(i + 1) % n];
+
+            const v1 = {
+                x: prev.x - curr.x,
+                y: prev.y - curr.y
+            };
+
+            const v2 = {
+                x: next.x - curr.x,
+                y: next.y - curr.y
+            };
+
+            const dot = v1.x * v2.x + v1.y * v2.y;
+            const len1 = Math.hypot(v1.x, v1.y);
+            const len2 = Math.hypot(v2.x, v2.y);
+
+            if (len1 === 0 || len2 === 0) return false;
+
+            const angle = Math.acos(
+                Math.max(-1, Math.min(1, dot / (len1 * len2)))
+            );
+
+            const deg = toDeg(angle);
+
+            // 🔥 проверка на ~90°
+            if (Math.abs(deg - 90) > toleranceDeg) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
 moveVertex(index, newX, newY) {
     if (!this.closedContour) return;
 
