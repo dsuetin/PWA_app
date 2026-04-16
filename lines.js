@@ -945,48 +945,32 @@ export class LinesManager {
         // абсолютная длина (в тех же единицах, что и точки)
         const L = Math.abs(newLength);
 
-        const isVertical = (A.x === B.x);
-
         // helper: записать новую точку в pts (с учётом того, какая точка была A/B)
         const setPoint = (posIndex, x, y) => {
             pts[posIndex] = { x: x, y: y };
         };
 
-        if (isVertical) {
-            // вертикальная: определим top (min y) и bottom (max y)
-            const topIdx = (A.y < B.y) ? index : (index + 1) % count;
-            const bottomIdx = (A.y < B.y) ? (index + 1) % count : index;
+        const dx = B.x - A.x;
+        const dy = B.y - A.y;
 
-            const top = pts[topIdx];
-            const bottom = pts[bottomIdx];
+        const len = Math.hypot(dx, dy);
+        if (len === 0) return;
 
-            if (!reverse) {
-                // двигаем нижнюю точку так, чтобы расстояние от top стало L (вниз когда L положительное)
-                const newBottomY = top.y + L;
-                setPoint(bottomIdx, bottom.x, newBottomY);
-            } else {
-                // двигаем верхнюю точку так, чтобы расстояние от top до bottom стало L,
-                // то есть top = bottom.y - L (поднимаем вверх)
-                const newTopY = bottom.y - L;
-                setPoint(topIdx, top.x, newTopY);
-            }
+        const ux = dx / len;
+        const uy = dy / len;
+
+        if (!reverse) {
+            // двигаем B
+            const newBx = A.x + ux * L;
+            const newBy = A.y + uy * L;
+
+            setPoint((index + 1) % count, newBx, newBy);
         } else {
-            // горизонтальная: определим left (min x) и right (max x)
-            const leftIdx = (A.x < B.x) ? index : (index + 1) % count;
-            const rightIdx = (A.x < B.x) ? (index + 1) % count : index;
+            // двигаем A
+            const newAx = B.x - ux * L;
+            const newAy = B.y - uy * L;
 
-            const left = pts[leftIdx];
-            const right = pts[rightIdx];
-
-            if (!reverse) {
-                // двигаем правую точку вправо: newRightX = left.x + L
-                const newRightX = left.x + L;
-                setPoint(rightIdx, newRightX, right.y);
-            } else {
-                // двигаем левую точку влево: newLeftX = right.x - L
-                const newLeftX = right.x - L;
-                setPoint(leftIdx, newLeftX, left.y);
-            }
+            setPoint(index, newAx, newAy);
         }
 
         // сохраняем замыкание

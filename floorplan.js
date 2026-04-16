@@ -41,6 +41,9 @@ export class FloorPlanEditor {
         this.dragVertexIndex = -1;
         this.dragPreviewVertex = null;
 
+        this.history = [];
+        this.historyIndex = -1;
+
         this.resizeCanvas();
         window.addEventListener("resize", () => this.resizeCanvas());
 
@@ -131,11 +134,16 @@ export class FloorPlanEditor {
                 }
             }
 
+            // // 1️⃣ СОХРАНЯЕМ состояние ДО замыкания
+            // this.saveState();
+            // 2️⃣ применяем изменения
             this.linesManager.lines = newLines;
             this.linesManager.lastPoint = lastPoint; // сохраняем lastPoint
+            // 3️⃣ сохраняем уже замкнутый контур
+            this.saveState();
             this.draw();
         });
-
+        // this.saveState();
         this.draw();
     }
 
@@ -149,6 +157,36 @@ export class FloorPlanEditor {
         this.isDrawing = false;
         this.linesManager.cancelCurrentLine();
         this.draw();
+    }
+
+    saveState() {
+        const lm = this.linesManager;
+
+        const snapshot = {
+            lines: JSON.parse(JSON.stringify(lm.lines)),
+            closedContour: lm.closedContour
+                ? JSON.parse(JSON.stringify(lm.closedContour))
+                : null,
+            lastPoint: lm.lastPoint ? { ...lm.lastPoint } : null,
+            lastPointVertical: lm.lastPointVertical ?? null
+        };
+
+        // если делали undo и потом новое действие → обрезаем хвост
+        this.history = this.history.slice(0, this.historyIndex + 1);
+
+        this.history.push(snapshot);
+        this.historyIndex = this.history.length - 1;
+    }
+
+    restoreState(snapshot) {
+        const lm = this.linesManager;
+
+        lm.lines = JSON.parse(JSON.stringify(snapshot.lines));
+        lm.closedContour = snapshot.closedContour
+            ? JSON.parse(JSON.stringify(snapshot.closedContour))
+            : null;
+        lm.lastPoint = snapshot.lastPoint ? { ...snapshot.lastPoint } : null;
+        lm.lastPointVertical = snapshot.lastPointVertical ?? null;
     }
 
     resizeCanvas() {
@@ -196,13 +234,13 @@ export class FloorPlanEditor {
 
         // направление изменения
         const reverse = input.trim().startsWith("-");
-
+        // this.saveState();
         this.linesManager.resizeSegmentByContour(
             idx,
             Math.abs(value),
             reverse
         );
-
+        this.saveState();
         this.draw();
     }
     
@@ -335,7 +373,7 @@ export class FloorPlanEditor {
 
             this.lastPanX = e.clientX;
             this.lastPanY = e.clientY;
-            console.log("PAN", this.offsetX, this.offsetY); // 👈 добавь
+            // console.log("PAN", this.offsetX, this.offsetY); // 👈 добавь
             this.draw();
             return;
         }
@@ -389,6 +427,9 @@ export class FloorPlanEditor {
         if (this.dragVertexIndex !== -1) {
             this.dragVertexIndex = -1;
             this.isDraggingVertex = false;
+            if (this.linesManager.closedContour) {
+                this.saveState();
+            }
             this.draw();
             return;
         }
@@ -764,7 +805,7 @@ export class FloorPlanEditor {
         } else {
             this.drawGrid();
         }
-        console.log("DRAW", this.offsetX, this.offsetY, this.scale);
+        // console.log("DRAW", this.offsetX, this.offsetY, this.scale);
         this.drawLines();
 
         if (this.lightsDrawer) this.lightsDrawer.drawWithOffset(this.offsetX, this.offsetY, this.scale);
@@ -778,19 +819,35 @@ export class FloorPlanEditor {
             this.draw();
             return;
         }
+        console.log("UNDO", this.historyIndex, this.history.length);
 
-        // 2️⃣ Undo линий / контура
-        if (this.linesManager) {
-            const wasContourLocked = !!this.linesManager.closedContour;
-
-            this.linesManager.undo();
-
-            // Если контур был снят, снимаем блокировку редактора
-            if (wasContourLocked) {
+        // 2️⃣ Если есть история состояний (после замыкания)
+        if (this.historyIndex > 0) {
+            console.log("RESTORE", this.historyIndex - 1);
+            this.historyIndex--;
+            this.restoreState(this.history[this.historyIndex]);
+            // если откатились до состояния без контура — снимаем блокировку
+            if (!this.linesManager.closedContour) {
                 this.contourLocked = false;
             }
+            this.draw();
+            return;
+        }
 
-            // Обновляем lastPoint на уровне редактора (дополнительно)
+        if (this.historyIndex === 0) {
+            console.log("RESTORE INITIAL STATE");
+            this.linesManager.closedContour = null;
+            this.contourLocked = false;
+            this.historyIndex = -1
+            this.history.pop();
+            this.linesManager.undo();
+            this.draw();
+            return;
+        }
+        // 3️⃣ До замыкания контура — старый undo
+        if (this.historyIndex === -1) {
+            console.warn("No linesManager for undo");
+            this.linesManager.undo();
             this.draw();
             return;
         }
@@ -838,8 +895,9 @@ export class FloorPlanEditor {
             alert("Отступ должен быть меньше длины сегмента.");
             return;
         }
-
+        // this.saveState();
         this.linesManager.addVertexOnSegment(idx, offset);
+        this.saveState();
         this.draw();
     }
 
@@ -944,6 +1002,7 @@ export class FloorPlanEditor {
         }
 
         this.contourLocked = false;
+        this.saveState();
         this.draw();
     }
 
