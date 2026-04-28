@@ -161,57 +161,49 @@ export class LinesManager {
         let { x, y } = pos;
 
         // -----------------------------
-        // 1️⃣ Определяем направление линии относительно свободного конца
+        // 1. ОПРЕДЕЛЯЕМ НАПРАВЛЕНИЕ ОДИН РАЗ
         // -----------------------------
         let vertical;
 
-        // если есть предыдущая точка — берём направление линии в ней
         if (this.lastPoint) {
-            const dir = this.getDirectionAtPoint(this.lastPoint.x, this.lastPoint.y);
-
-            if (dir === "horizontal") vertical = true;
-            else if (dir === "vertical") vertical = false;
-            else {
-                // fallback (первая линия или изолированная точка)
-                const dx = Math.abs(x - x1);
-                const dy = Math.abs(y - y1);
-                vertical = dy > dx;
-            }
+            const dx = Math.abs(x - x1);
+            const dy = Math.abs(y - y1);
+            vertical = dy > dx;
         } else {
             const dx = Math.abs(x - x1);
             const dy = Math.abs(y - y1);
             vertical = dy > dx;
         }
 
+        this.currentLineVertical = vertical;
+
         // -----------------------------
-        // 2️⃣ Фиксируем координату перпендикулярно
+        // 2. ЖЁСТКО ФИКСИРУЕМ ОСЬ
         // -----------------------------
         if (vertical) {
-            x = x1; // вертикальная — X фиксируем
+            x = x1;
         } else {
-            y = y1; // горизонтальная — Y фиксируем
+            y = y1;
         }
 
         // -----------------------------
-        // 3️⃣ Ограничения и normalize
+        // 3. КОНСТРЕЙНТЫ (НО БЕЗ СМЕНЫ ОСИ)
         // -----------------------------
         const limited = this.applyLineConstraints(x1, y1, x, y);
-        const norm = vertical
-            ? this.normalizeSegment(x1, y1, x1, limited.y2)
-            : this.normalizeSegment(x1, y1, limited.x2, y1);
+
+        if (vertical) {
+            x = x1;
+            y = limited.y2;
+        } else {
+            x = limited.x2;
+            y = y1;
+        }
 
         // -----------------------------
-        // 4️⃣ Проверка пересечения
+        // 4. НИКАКОГО "УГАДЫВАНИЯ" В normalizeSegment
         // -----------------------------
-        const newLine = { x1, y1, x2: norm.x2, y2: norm.y2 };
-        const intersects = this.lines.some(existing => this._linesIntersect(existing, newLine));
-        if (intersects) return;
-
-        // -----------------------------
-        // 5️⃣ Применяем к текущей линии
-        // -----------------------------
-        this.currentLine.x2 = norm.x2;
-        this.currentLine.y2 = norm.y2;
+        this.currentLine.x2 = x;
+        this.currentLine.y2 = y;
     }
 
     // вспомогательная функция для проверки пересечения линий (только горизонт/вертик)
@@ -245,33 +237,98 @@ export class LinesManager {
 
     finishLine(length) {
         if (!this.currentLine) return;
+
         let { x1, y1, x2, y2 } = this.currentLine;
 
-        if (length && !isNaN(length)) {
-            if (x1 === x2) y2 = y1 + Math.sign(y2 - y1) * length;
-            else x2 = x1 + Math.sign(x2 - x1) * length;
+        const hasLength = (length !== undefined && length !== null && !isNaN(length));
+
+        // -----------------------------
+        // 1. Если пользователь задал длину — фиксируем строго по оси
+        // -----------------------------
+        if (hasLength) {
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+
+            // определяем направление (если мышь не двигалась — fallback)
+            const vertical = Math.abs(dy) >= Math.abs(dx);
+
+            if (vertical) {
+                const dir = (dy === 0 ? 1 : Math.sign(dy));
+                x2 = x1;
+                y2 = y1 + dir * length;
+            } else {
+                const dir = (dx === 0 ? 1 : Math.sign(dx));
+                x2 = x1 + dir * length;
+                y2 = y1;
+            }
         }
 
+        // -----------------------------
+        // 2. Ограничение пересечениями
+        // -----------------------------
         const limit = this.findLimit(x1, y1, x2, y2);
+
         if (limit !== null) {
-            if (x1 === x2 && Math.abs(y2 - y1) > Math.abs(limit - y1)) y2 = limit;
-            if (y1 === y2 && Math.abs(x2 - x1) > Math.abs(limit - x1)) x2 = limit;
+            if (x1 === x2) {
+                if (Math.abs(y2 - y1) > Math.abs(limit - y1)) {
+                    y2 = limit;
+                }
+            } else {
+                if (Math.abs(x2 - x1) > Math.abs(limit - x1)) {
+                    x2 = limit;
+                }
+            }
         }
 
+        // -----------------------------
+        // 3. Нормализация БЕЗ ломания геометрии
+        // (snap выключаем только если есть длина)
+        // -----------------------------
 
-        const norm = this.normalizeSegment(x1, y1, x2, y2);
+        const norm = this.normalizeSegment(
+            x1,
+            y1,
+            x2,
+            y2
+        );
 
-        const L = { x1: norm.x1, y1: norm.y1, x2: norm.x2, y2: norm.y2, _id: this._nextLineId++ };
-        // const L = { x1, y1, x2, y2, _id: this._nextLineId++ };
+        // -----------------------------
+        // 4. Защита от нулевой линии
+        // -----------------------------
+        if (norm.x1 === norm.x2 && norm.y1 === norm.y2) {
+            console.warn("finishLine: нулевая линия, пропуск");
+            this.currentLine = null;
+            return;
+        }
+
+        // -----------------------------
+        // 5. Добавляем линию
+        // -----------------------------
+        const L = {
+            x1: norm.x1,
+            y1: norm.y1,
+            x2: norm.x2,
+            y2: norm.y2,
+            _id: this._nextLineId++
+        };
+
         this.lines.push(L);
-        this.lastPoint = { x: L.x2, y: L.y2 };
+
+        this.lastPoint = {
+            x: L.x2,
+            y: L.y2
+        };
+
         this.currentLine = null;
 
+        // -----------------------------
+        // 6. Проверка контура
+        // -----------------------------
         this.closedContour = this.detectClosedContour();
+
         if (this.closedContour) {
             window.dispatchEvent(new Event("contour-closed"));
         }
-        // if (this.closedContour) console.log("Контур замкнут!", this.closedContour);
 
         return true;
     }
@@ -806,25 +863,27 @@ export class LinesManager {
 
         return Math.sqrt(dx * dx + dy * dy);
     }
-    // нормализуем отрезок: snap -> делаем строго горизонтальным или вертикальным
+
     normalizeSegment(x1, y1, x2, y2) {
-        // привязка к сетке
-        const s1 = this.snapToGrid(x1, y1);
-        const s2 = this.snapToGrid(x2, y2);
+        let nx1 = x1, ny1 = y1;
+        let nx2 = x2, ny2 = y2;
 
-        let nx1 = s1.x, ny1 = s1.y, nx2 = s2.x, ny2 = s2.y;
+        // // ❗ snap только стартовой точки (если вообще нужен)
+        // const s1 = this.snapToGrid(x1, y1);
+        // nx1 = s1.x;
+        // ny1 = s1.y;
 
-        // если разница по X больше чем по Y -> горизонтальная, иначе вертикальная
+        // // ❗ ВАЖНО: конец НЕ снапим
+
         if (Math.abs(nx2 - nx1) > Math.abs(ny2 - ny1)) {
-            // horizontal => оставляем y, корректируем x2
             ny2 = ny1;
         } else {
-            // vertical => оставляем x, корректируем y2
             nx2 = nx1;
         }
 
         return { x1: nx1, y1: ny1, x2: nx2, y2: ny2 };
     }
+    
     syncLinesFromContour() {
         if (!this.closedContour) return;
 
