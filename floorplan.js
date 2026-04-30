@@ -413,17 +413,15 @@ export class FloorPlanEditor {
         
     }
 
-    onPointerUp() {
+    async onPointerUp() {
         this.activeTouches = [];
         this.isPinching = false;
         this.dragPreviewVertex = null;
-        // ---------------- PAN ----------------
         if (this.isPanning) {
             this.isPanning = false;
             return;
         }
 
-        // ---------------- VERTEX DRAG STOP ----------------
         if (this.dragVertexIndex !== -1) {
             this.dragVertexIndex = -1;
             this.isDraggingVertex = false;
@@ -434,18 +432,15 @@ export class FloorPlanEditor {
             return;
         }
 
-        // ---------------- SAFETY LOCK ----------------
         if (this.finishLocked) return;
-
-        // ---------------- DRAW MODE ----------------
         if (!this.isDrawing || !this.linesManager.currentLine) return;
 
         this.finishLocked = true;
         this.isDrawing = false;
 
-        const lenStr = prompt("Введите длину линии в см (Отмена — отменить линию):");
+        const lenStr = await this.askLength();
 
-        if (lenStr === null) {
+        if (lenStr === "cancel") {
             this.linesManager.cancelCurrentLine();
             if (this.lightsDrawer) this.draw();
             this.finishLocked = false;
@@ -453,7 +448,7 @@ export class FloorPlanEditor {
         }
 
         if (lenStr !== "" && !isNaN(lenStr)) {
-            this.linesManager.finishLine(parseInt(lenStr, 10));
+            this.linesManager.finishLine(lenStr);
         } else {
             this.linesManager.finishLine();
         }
@@ -463,6 +458,80 @@ export class FloorPlanEditor {
         setTimeout(() => this.finishLocked = false, 0);
     }
 
+    askLength() {
+        return new Promise((resolve) => {
+            const modal = document.getElementById("lengthModal");
+            const input = document.getElementById("lengthInput");
+            const okBtn = document.getElementById("lengthOk");
+            const cancelBtn = document.getElementById("lengthCancel");
+
+            if (!modal || !input || !okBtn || !cancelBtn) {
+                resolve(null);
+                return;
+            }
+
+            let finished = false;
+
+            const cleanup = () => {
+                modal.style.display = "none";
+                okBtn.onclick = null;
+                cancelBtn.onclick = null;
+                input.onkeydown = null;
+            };
+
+            const finish = (value) => {
+                if (finished) return;
+                finished = true;
+                cleanup();
+                resolve(value);
+            };
+
+            modal.style.display = "flex";
+            input.value = "";
+            input.defaultValue = "";
+            input.setAttribute("autocomplete", "off");
+            input.setAttribute("autocapitalize", "off");
+            input.setAttribute("autocorrect", "off");
+
+            const focusInput = () => {
+                input.focus({ preventScroll: true });
+
+                // iOS fix
+                setTimeout(() => {
+                    input.focus();
+                }, 50);
+            };
+
+            focusInput();
+
+            okBtn.onclick = () => {
+                const raw = input.value.trim();
+                console.log("raw VALUE:", raw);
+                console.log("RAW:", JSON.stringify(input.value));
+                // если пусто — НЕ удаляем линию
+                if (raw === "") {
+                    finish(null);
+                    return;
+                }
+
+                const v = Number(raw);
+                console.log("FINISH VALUE00:", v);
+                if (!Number.isFinite(v) || v <= 0) {
+                    finish("cancel"); // отмена
+                    return;
+                }
+                console.log("FINISH VALUE:", v);
+                finish(v);
+            };
+
+            cancelBtn.onclick = () => finish(null);
+
+            input.onkeydown = (e) => {
+                if (e.key === "Enter") okBtn.click();
+                if (e.key === "Escape") cancelBtn.click();
+            };
+        });
+    }
     // ---------- PINCH ZOOM ----------
     onTouchStart(e) {
         if (e.touches.length === 2) {

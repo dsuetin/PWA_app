@@ -240,12 +240,18 @@ export class LinesManager {
 
         let { x1, y1, x2, y2 } = this.currentLine;
 
-        const hasLength = (length !== undefined && length !== null && !isNaN(length));
+        console.log("lengtlength", length);
+        const useCurrent = (length === null);
+        console.log("useCurrent", useCurrent);
+        
+        const hasLength = !useCurrent && Number.isFinite(length);
+        console.log("x y points", x1, y1, x2, y2)
+
 
         // -----------------------------
         // 1. Если пользователь задал длину — фиксируем строго по оси
         // -----------------------------
-        if (hasLength) {
+        if (hasLength && !useCurrent) {
             const dx = x2 - x1;
             const dy = y2 - y1;
 
@@ -296,7 +302,7 @@ export class LinesManager {
         // 4. Защита от нулевой линии
         // -----------------------------
         if (norm.x1 === norm.x2 && norm.y1 === norm.y2) {
-            console.warn("finishLine: нулевая линия, пропуск");
+            console.log("finishLine: нулевая линия, пропуск");
             this.currentLine = null;
             return;
         }
@@ -867,13 +873,6 @@ export class LinesManager {
     normalizeSegment(x1, y1, x2, y2) {
         let nx1 = x1, ny1 = y1;
         let nx2 = x2, ny2 = y2;
-
-        // // ❗ snap только стартовой точки (если вообще нужен)
-        // const s1 = this.snapToGrid(x1, y1);
-        // nx1 = s1.x;
-        // ny1 = s1.y;
-
-        // // ❗ ВАЖНО: конец НЕ снапим
 
         if (Math.abs(nx2 - nx1) > Math.abs(ny2 - ny1)) {
             ny2 = ny1;

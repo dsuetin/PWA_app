@@ -105,6 +105,43 @@
     Ctrl + Z или кнопка «Отмена»
 </div>
 
+<div id="lengthModal"
+     style="
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.4);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+     ">
+
+    <div style="
+        background: white;
+        padding: 16px;
+        border-radius: 10px;
+        width: 260px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    ">
+
+        <div style="font-size:14px;">
+            Введите длину линии (см) (При пустом поле будет сохранена текущая длина)
+        </div>
+
+        <input id="lengthInput"
+               type="text"
+               inputmode="decimal"
+               style="font-size:16px; padding:6px;">
+
+        <div style="display:flex; gap:10px; justify-content:flex-end;">
+            <button id="lengthCancel">Отмена</button>
+            <button id="lengthOk">OK</button>
+        </div>
+
+    </div>
+</div>
 <script type="module" src="./app.js"></script>
 
 <script>
